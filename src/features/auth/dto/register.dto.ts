@@ -7,7 +7,6 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { AppAccessDto } from './app-access.dto';
 
 export class RegisterDto {
   @IsEmail()
@@ -26,7 +25,11 @@ export class RegisterDto {
   isSuperAdmin: boolean;
 
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => AppAccessDto)
-  apps: AppAccessDto[]; // <— matches Flutter payload
+  @IsNotEmpty()
+  apps: string[];
+  
+  @IsArray()
+  @IsNotEmpty()
+  appWorks: string[];
+
 }

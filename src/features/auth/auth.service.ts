@@ -305,6 +305,7 @@ export class AuthService {
         isActive: false,
         isSuperAdmin: false,
         apps: [],
+        appWorks: [],
       });
     }
 

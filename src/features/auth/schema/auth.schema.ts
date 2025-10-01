@@ -42,8 +42,11 @@ export class User extends Document {
   @Prop({ default: [] })
   deviceHistory: string[];
 
-  @Prop({ type: [AppAccessSchema], default: [] }) // <— subdocs
-  apps: { app: string; access: string[] }[];
+  @Prop({ default: [] }) // <— subdocs
+  apps: string[];
+
+   @Prop({ default: [] }) // <— subdocs
+  appWorks: string[];
 
   @Prop() photoUrl: string;
 

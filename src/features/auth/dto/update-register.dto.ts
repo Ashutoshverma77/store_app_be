@@ -2,7 +2,6 @@ import { PartialType } from '@nestjs/mapped-types';
 import { IsArray, IsEmail, IsNotEmpty, ValidateNested } from 'class-validator';
 import { RegisterDto } from './register.dto';
 import { Type } from 'class-transformer';
-import { AppAccessDto } from './app-access.dto';
 
 export class UpdateRegistorDto {
   @IsNotEmpty()
@@ -20,8 +19,11 @@ export class UpdateRegistorDto {
   @IsNotEmpty()
   isSuperAdmin: boolean;
 
+ @IsArray()
+  @IsNotEmpty()
+  apps: string[];
+  
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => AppAccessDto)
-  apps: AppAccessDto[]; // <— matches Flutter payload
+  @IsNotEmpty()
+  appWorks: string[];
 }
