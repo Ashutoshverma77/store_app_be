@@ -16,6 +16,9 @@ import { AppService } from './app.service.js';
     MongooseModule.forRoot(process.env.MONGO_URI!, {
       connectionName: 'auth',
     }),
+    MongooseModule.forRoot(process.env.MONGO_URI!, {
+      connectionName: 'store',
+    }),
     FeaturesModule,
   ],
 
