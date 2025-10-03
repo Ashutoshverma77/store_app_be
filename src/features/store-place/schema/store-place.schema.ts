@@ -14,8 +14,8 @@ export class StorePlace {
   @Prop({ trim: true, default: '' })
   type: string;
 
-  @Prop({ type: [Types.ObjectId], ref: 'StoreItem', default: [] })
-  storeItemIds: Types.ObjectId[];
+  @Prop({ type: [Types.ObjectId], ref: 'StorePlaceItemQuantity', default: [] })
+  StorePlaceItemQuantityIds: Types.ObjectId[];
 
   @Prop({ trim: true, default: '' })
   remark: string;
