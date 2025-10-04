@@ -72,6 +72,15 @@ export class ItemIssueController {
     this.gateway.broadcastAuthList().catch(() => {});
     return data;
   }
+
+  @Put('issuereject')
+  async issueReject(@Body() payload: any) {
+    console.log(payload);
+    var data = await this.itemIssueService.rejectIssue(payload);
+    this.gateway.broadcastAuthList().catch(() => {});
+    return data;
+  }
+
   // @Delete(':id')
   // remove(@Param('id') id: string) {
   //   return this.itemIssueService.remove(+id);

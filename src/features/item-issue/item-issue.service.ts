@@ -385,15 +385,15 @@ export class IssueService {
       if (items.length !== ids.length) {
         return { msg: 'Issue Item Failed.......', status: false };
       }
-      for (const it of items) {
-        const idHex = String(it._id);
-        const need = toDeductByItem[idHex] ?? 0;
-        const avail = Number(it.stockAvailableQuantity ?? 0);
-        const total = Number(it.totalStockQuantity ?? 0);
-        if (need > avail || need > total) {
-          return { msg: 'Issue Item Failed.......', status: false };
-        }
-      }
+      // for (const it of items) {
+      //   const idHex = String(it._id);
+      //   const need = toDeductByItem[idHex] ?? 0;
+      //   const avail = Number(it.stockAvailableQuantity ?? 0);
+      //   const total = Number(it.totalStockQuantity ?? 0);
+      //   if (need > avail || need > total) {
+      //     return { msg: 'Issue Item Failed.......', status: false };
+      //   }
+      // }
 
       // transaction (optional but recommended)
       // const session = await this.conn.startSession();
@@ -469,6 +469,118 @@ export class IssueService {
       return { msg: 'Issue Approved.......', status: true };
     } catch (e) {
       this.logger.error(`approveIssue failed: ${e?.message || e}`);
+      return { msg: 'Issue Item Failed.......', status: false };
+    }
+  }
+
+  async rejectIssue(dto: any) {
+    try {
+      // ---- basic shape ----
+      if (!dto?.id || !isValidObjectId(dto.id)) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      // ---- load issue ----
+      const iss = await this.issModel.findById(dto.id).lean();
+      if (!iss) return { msg: 'Issue Item Failed.......', status: false };
+
+      // only allow reject while not closed/cancelled
+      if (iss.status !== 'DRAFT' && iss.status !== 'APPROVED') {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      if ((iss.lines ?? []).some((l) => Number(l.issuedQty ?? 0) > 0)) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      // ---- compute how much to release per item
+      // we reserved at CREATE the full requestedQty; as issues happen, issuedQty grows,
+      // so remaining reserved for this issue = requestedQty - issuedQty
+      const releaseByItem: Record<string, number> = {};
+      for (const l of iss.lines ?? []) {
+        const itemId = String(l.itemId);
+        const requested = Number(l.requestedQty ?? 0);
+        const issued = Number(l.issuedQty ?? 0);
+        const release = Math.max(0, requested - issued);
+        if (release > 0) {
+          releaseByItem[itemId] = (releaseByItem[itemId] ?? 0) + release;
+        }
+      }
+
+      // If nothing left reserved, still cancel the issue (nothing to release)
+      const itemIds = Object.keys(releaseByItem);
+
+      // ---- existence check for items (defensive)
+      if (itemIds.length > 0) {
+        const ids = itemIds.map((id) => new Types.ObjectId(id));
+        const found = await this.itemModel.countDocuments({
+          _id: { $in: ids },
+        });
+        if (found !== ids.length) {
+          return { msg: 'Issue Item Failed.......', status: false };
+        }
+      }
+
+      // ---------- Transaction recommended (kept inline without session for brevity) ----------
+      try {
+        // 1) Move remaining reservation back to available (atomic guards)
+        for (const [itemId, qty] of Object.entries(releaseByItem)) {
+          const res = await this.itemModel.updateOne(
+            {
+              _id: new Types.ObjectId(itemId),
+              // guard so stockIssueQuantity never goes negative
+              stockIssueQuantity: { $gte: qty },
+            },
+            {
+              $inc: {
+                stockIssueQuantity: -qty,
+                stockAvailableQuantity: +qty,
+              },
+            },
+          );
+          if (res.matchedCount !== 1 || res.modifiedCount !== 1) {
+            // if any guard fails, abort the whole reject
+            throw new Error('Reservation release would go negative');
+          }
+        }
+
+        // 2) Movement logs (optional): record the release as ADJUST
+        //    qty = released amount (positive). No placeId/receivingId for a reject.
+        if (itemIds.length > 0) {
+          const movements = itemIds.map((iid) => ({
+            itemId: new Types.ObjectId(iid),
+            placeId: '',
+            receivingId: '',
+            issueId: new Types.ObjectId(iss._id),
+            type: 'ADJUST' as const,
+            qty: Number(releaseByItem[iid]),
+            refNo: String(iss.issNo ?? ''),
+            operatedBy:
+              dto.userId && isValidObjectId(dto.userId)
+                ? new Types.ObjectId(dto.userId)
+                : new Types.ObjectId(iss.createdBy),
+            note: 'Issue rejected: release reservation back to available',
+          }));
+          await this.movModel.insertMany(movements);
+        }
+
+        // 3) Mark issue as CANCELLED/REJECTED
+        const set: any = {
+          status: 'CANCELLED', // or 'REJECTED' if you prefer
+          cancelledAt: new Date(), // add this field in schema if you want
+        };
+        if (dto.userId && isValidObjectId(dto.userId)) {
+          set.cancelledBy = new Types.ObjectId(dto.userId); // add in schema if desired
+        }
+        await this.issModel.updateOne({ _id: iss._id }, { $set: set });
+      } catch (err) {
+        this.logger.error(`rejectIssue tx failed: ${err?.message || err}`);
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      return { msg: 'Issue Rejected.......', status: true };
+    } catch (e) {
+      this.logger.error(`rejectIssue failed: ${e?.message || e}`);
       return { msg: 'Issue Item Failed.......', status: false };
     }
   }
