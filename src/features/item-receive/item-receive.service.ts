@@ -169,6 +169,7 @@ export class ReceivingService {
   //     throw new BadRequestException('Only DRAFT can be approved');
 
   //   // map for quick lookup
+  
   //   const map = new Map(dto.lines.map((l) => [l.itemId, l.approvedQty]));
   //   // validate not exceeding requested
   //   rec.lines.forEach((line) => {

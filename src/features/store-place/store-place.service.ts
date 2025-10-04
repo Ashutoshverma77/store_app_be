@@ -4,12 +4,15 @@ import { Model } from 'mongoose';
 import { StorePlace } from './schema/store-place.schema';
 import { CreateStorePlaceDto } from './dto/create-store-place.dto';
 import { UpdateStorePlaceDto } from './dto/update-store-place.dto';
+import { StorePlaceItemQuantity } from './schema/store-place-item-quantity.schema';
 
 @Injectable()
 export class StorePlaceService {
   constructor(
     @InjectModel(StorePlace.name, 'store')
     private storePlaceSchema: Model<StorePlace>,
+    @InjectModel(StorePlaceItemQuantity.name, 'store')
+    private readonly spiqModel: Model<StorePlaceItemQuantity>,
   ) {}
 
   async create(createStorePlaceDto: CreateStorePlaceDto) {
@@ -20,6 +23,10 @@ export class StorePlaceService {
 
   async findAll() {
     return await this.storePlaceSchema.find();
+  }
+
+  async findAllPlaceQuantity() {
+    return await this.spiqModel.find();
   }
 
   async findOne(id: string) {

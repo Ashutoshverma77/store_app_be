@@ -23,11 +23,19 @@ export class StorePlaceGateway {
     return;
   }
 
-   @SubscribeMessage('store:findOneStorePlace')
+  @SubscribeMessage('store:findOneStorePlace')
   async findOne(client: any, payload: any) {
     var authUserList = await this.storePlaceService.findOne(payload.id);
 
     client.emit('store:findOneStorePlace', authUserList);
+    return;
+  }
+
+  @SubscribeMessage('store:findAllStorePlaceQuantity')
+  async findAllPlaceQuantity(client: any, payload: any) {
+    var authUserList = await this.storePlaceService.findAllPlaceQuantity();
+
+    client.emit('store:findAllStorePlaceQuantity', authUserList);
     return;
   }
 }
