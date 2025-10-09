@@ -18,12 +18,15 @@ import { UpdateAuthDto } from './dto/update-auth.dto.js';
 import { UpdateRegistorDto } from './dto/update-register.dto.js';
 import { AuthGateway } from './auth.gateway.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { UploadBase64Dto } from '../store-item/schema/upload-image.dto.js';
+import { StoreItemService } from '../store-item/store-item.service.js';
 
 @Controller('/api/auth')
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly gateway: AuthGateway,
+    private readonly storeItemService: StoreItemService,
   ) {}
 
   @Post('register')
@@ -86,6 +89,17 @@ export class AuthController {
   @Get('me')
   async me(@CurrentUser() user?: { userId: string }) {
     return { ok: true, userId: user?.userId };
+  }
+
+  @Post(':id/image/base64')
+  async uploadImage(@Param('id') id: string, @Body() dto: UploadBase64Dto) {
+    const { imageUrl, entity } = await this.storeItemService.uploadImageBase64(
+      'user',
+      id,
+      dto.base64,
+      'store-user',
+    );
+    return { success: true, imageUrl, entity };
   }
 
   // @UseGuards(JwtAuthGuard)

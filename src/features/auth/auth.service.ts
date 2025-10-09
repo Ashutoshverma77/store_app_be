@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -15,11 +16,14 @@ import { CreateAuthDto } from './dto/create-auth.dto.js';
 import { UpdateAuthDto } from './dto/update-auth.dto.js';
 import { UpdateRegistorDto } from './dto/update-register.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { AnyCaaRecord } from 'dns';
+import { v4 as uuid } from 'uuid';
+import { minioClient } from 'src/config/minio.config.js';
 
 @Injectable()
 export class AuthService {
   private google: OAuth2Client;
-
+  private readonly bucketName = process.env.MINIO_BUCKET || 'auth';
   constructor(
     private readonly users: UserService,
     private jwt: JwtService,
@@ -327,6 +331,11 @@ export class AuthService {
 
   async findByIdUsers(id: string) {
     return await this.users.findById(id);
+  }
+
+  async findUserPaged(body: any) {
+    var users = await this.users.findUserPaged(body);
+    return users;
   }
 
   // async create(user: CreateAuthDto) {

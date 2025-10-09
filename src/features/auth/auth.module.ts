@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtStrategy } from './jwt.strategy.js';
 import { AuthGateway } from './auth.gateway.js';
+import { StoreItemModule } from '../store-item/store-item.module.js';
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -28,6 +29,7 @@ import { AuthGateway } from './auth.gateway.js';
       'auth',
     ),
     UserModule,
+    StoreItemModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, AuthGateway],

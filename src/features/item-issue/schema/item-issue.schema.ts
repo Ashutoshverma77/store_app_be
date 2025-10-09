@@ -18,6 +18,9 @@ class IssueLine {
   @Prop({ default: 0, min: 0 })
   issuedQty: number;
 
+  @Prop({ default: 0, min: 0 })
+  returnQty: number;
+
   @Prop({ default: '' })
   unit: string;
 }

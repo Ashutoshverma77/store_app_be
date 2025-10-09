@@ -50,10 +50,65 @@ export class UserService {
     return doc;
   }
 
+  async findUserPaged(body: any) {
+    const page = Math.max(1, Number(body?.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(body?.limit ?? 12)));
+    const skip = (page - 1) * limit;
+
+    const qText = String(body?.q ?? '').trim();
+    const field = String(body?.field ?? 'all'); // all | name | email | phone
+
+    // sort
+    const sortStr = String(body?.sort ?? '-createdAt');
+    const dir = sortStr.startsWith('-') ? -1 : 1;
+    const fieldName = sortStr.replace(/^-/, '') || 'createdAt';
+    const sort: Record<string, 1 | -1> = { [fieldName]: dir };
+
+    // filter
+    const filter: any = {};
+    if (qText) {
+      const rx = { $regex: qText, $options: 'i' };
+      if (field === 'name') filter.name = rx;
+      else if (field === 'email') filter.email = rx;
+      else if (field === 'phone') filter.phoneNumber = rx;
+      else {
+        filter.$or = [{ name: rx }, { email: rx }, { phoneNumber: rx }];
+      }
+    }
+
+    const project = {
+      name: 1,
+      email: 1,
+      phoneNumber: 1,
+      isActive: 1,
+      isSuperAdmin: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const [rows, total] = await Promise.all([
+      this.userSchema
+        .find(filter)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        // .select(project)
+        .lean(),
+      this.userSchema.countDocuments(filter),
+    ]);
+
+    return {
+      rows: rows.map((u: any) => ({
+        ...u,
+        _id: String(u._id ?? ''), // normalize id to FE shape if needed
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
   async updaterResetPwd(data: ResetPasswordDto) {
-
-
-
     const hash = await bcrypt.hash(data.newPassword, 10);
     const doc: User | null = await this.userSchema.findByIdAndUpdate(
       data.userId,

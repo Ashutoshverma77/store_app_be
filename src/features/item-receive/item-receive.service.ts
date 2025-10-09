@@ -118,6 +118,7 @@ export class ReceivingService {
       requestedQty: v.qty,
       approvedQty: 0,
       receivedQty: 0,
+      scrapQty: 0,
       unit: v.unit ?? '',
     }));
 
@@ -157,6 +158,82 @@ export class ReceivingService {
     return await this.recModel.findById(id);
   }
 
+  async findPaged(payload: any) {
+    const page = Math.max(1, Number(payload?.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(payload?.limit ?? 12)));
+    const skip = (page - 1) * limit;
+
+    const s = String(payload?.search ?? '').trim();
+    const item = String(payload?.item ?? '').trim();
+    const status = payload?.status ? String(payload.status) : undefined;
+
+    const q: any = {};
+    if (s) {
+      q.$or = [
+        { recNo: { $regex: s, $options: 'i' } },
+        { source: { $regex: s, $options: 'i' } },
+      ];
+    }
+    if (status) q.status = status;
+
+    // If you want item-name search, pre-join or store denormalized item names on receiving lines.
+    if (item) {
+      q['lines.itemName'] = { $regex: item, $options: 'i' }; // adjust to your schema
+    }
+
+    const sort = ((): Record<string, 1 | -1> => {
+      const raw = String(payload?.sort ?? '-createdAt');
+      const dir = raw.startsWith('-') ? -1 : 1;
+      const f = raw.replace(/^-/, '') || 'createdAt';
+      return { [f]: dir };
+    })();
+
+    const [rows, total] = await Promise.all([
+      this.recModel.find(q).sort(sort).skip(skip).limit(limit).lean(),
+      this.recModel.countDocuments(q),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findStatusPaged(body: any) {
+    const page = Math.max(1, Number(body?.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(body?.limit ?? 12)));
+    const skip = (page - 1) * limit;
+
+    const search = String(body?.search ?? '').trim(); // recNo/source
+    const item = String(body?.item ?? '').trim(); // line.itemName/code
+    const status = Array.isArray(body?.status) ? body.status.map(String) : [];
+
+    const q: any = {};
+    if (status.length) q.status = { $in: status };
+    if (search) {
+      q.$or = [
+        { recNo: { $regex: search, $options: 'i' } },
+        { source: { $regex: search, $options: 'i' } },
+      ];
+    }
+    if (item) {
+      // If lines have itemName or code saved:
+      q['lines.itemName'] = { $regex: item, $options: 'i' };
+      // or include code: q.$or = [...(q.$or ?? []), {'lines.itemCode': {$regex:item,$options:'i'}}]
+    }
+
+    const sort = (() => {
+      const raw = String(body?.sort ?? '-createdAt');
+      const dir = raw.startsWith('-') ? -1 : 1;
+      const f = raw.replace(/^-/, '') || 'createdAt';
+      return { [f]: dir } as Record<string, 1 | -1>;
+    })();
+
+    const [rows, total] = await Promise.all([
+      this.recModel.find(q).sort(sort).skip(skip).limit(limit).lean(),
+      this.recModel.countDocuments(q),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
   async findStatus(status: string[]) {
     return await this.recModel
       .find({ status: { $in: status } })
@@ -169,7 +246,7 @@ export class ReceivingService {
   //     throw new BadRequestException('Only DRAFT can be approved');
 
   //   // map for quick lookup
-  
+
   //   const map = new Map(dto.lines.map((l) => [l.itemId, l.approvedQty]));
   //   // validate not exceeding requested
   //   rec.lines.forEach((line) => {
@@ -269,6 +346,7 @@ export class ReceivingService {
       requestedQty: v.qty,
       approvedQty: 0,
       receivedQty: 0,
+      scrapQty: 0,
       unit: v.unit ?? '',
     }));
 
@@ -396,6 +474,64 @@ export class ReceivingService {
     }
   }
 
+  async rejectReceive(dto: any) {
+    try {
+      // --- basic checks ---
+      if (!dto?.id || !isValidObjectId(dto.id)) {
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+
+      // --- load receiving ---
+      const rec = await this.recModel.findById(dto.id).lean();
+      if (!rec) {
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+
+      // Only allow rejecting DRAFT / APPROVED (not CLOSED/CANCELLED)
+      if (rec.status !== 'DRAFT' && rec.status !== 'APPROVED') {
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+
+      // If anything is already received to a place, we cannot reject
+      const hasAnyReceived = (rec.lines ?? []).some(
+        (l: any) => Number(l.receivedQty ?? 0) > 0,
+      );
+      if (hasAnyReceived) {
+        // Stock already moved into places; rejecting now would desync quantities.
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+
+      // Prepare $set to zero-out any approvedQty (optional but keeps it clean)
+      const setPaths: Record<string, any> = {};
+      for (let i = 0; i < (rec.lines?.length ?? 0); i++) {
+        const l = rec.lines[i];
+        const curApproved = Number(l?.approvedQty ?? 0);
+        if (curApproved !== 0) {
+          setPaths[`lines.${i}.approvedQty`] = 0;
+        }
+      }
+
+      // Mark as CANCELLED (or use 'REJECTED' if your status set includes it)
+      const setDoc: any = {
+        status: 'CANCELLED',
+        cancelledAt: new Date(), // add these fields in schema if you want to persist them
+      };
+      if (dto.userId && isValidObjectId(dto.userId)) {
+        setDoc.cancelledBy = new Types.ObjectId(dto.userId);
+      }
+
+      await this.recModel.updateOne(
+        { _id: rec._id },
+        { $set: { ...setPaths, ...setDoc } },
+      );
+
+      return { msg: 'Receive Item Rejected.......', status: true };
+    } catch (err) {
+      this.logger.error(`rejectReceive failed: ${err?.message || err}`);
+      return { msg: 'Receive Item Failed.......', status: false };
+    }
+  }
+
   // inside your ReceivingService class
 
   async receiveToPlaceOne(dto: any) {
@@ -417,10 +553,15 @@ export class ReceivingService {
         return { msg: 'Receive Item Failed.......', status: false };
       }
 
-      const qty = Number(dto?.quantity ?? 0);
-      if (!Number.isInteger(qty) || qty <= 0) {
+      const receiveQty = Number(dto?.quantity ?? 0);
+      const scrapQty = Number(dto?.scrapQuantity ?? 0);
+
+      if (!Number.isInteger(receiveQty) || receiveQty < 0)
         return { msg: 'Receive Item Failed.......', status: false };
-      }
+      if (!Number.isInteger(scrapQty) || scrapQty < 0)
+        return { msg: 'Receive Item Failed.......', status: false };
+      if (receiveQty + scrapQty <= 0)
+        return { msg: 'Receive Item Failed.......', status: false };
 
       const itemId = new Types.ObjectId(itemIdRaw);
       const placeId = new Types.ObjectId(placeIdRaw);
@@ -433,25 +574,28 @@ export class ReceivingService {
       // -------- 2) Existence checks for ALL 3 IDs --------
       const [rec, itemDoc, placeDoc] = await Promise.all([
         this.recModel
-          .findById(recId, { lines: 1, status: 1, recNo: 1, createdBy: 1 })
+          .findById(recId, {
+            lines: 1,
+            status: 1,
+            recNo: 1,
+            createdBy: 1,
+          })
           .lean(),
         this.itemModel.findById(itemId, { _id: 1, name: 1 }).lean(),
         this.placeModel.findById(placeId, { _id: 1, name: 1 }).lean(),
       ]);
 
       if (!rec || !itemDoc || !placeDoc) {
-        // at least one of the 3 entities does not exist
         return { msg: 'Receive Item Failed.......', status: false };
       }
       if (rec.status !== 'APPROVED') {
-        // tighten approval requirement (change if you want to allow DRAFT too)
         return { msg: 'Receive Item Failed.......', status: false };
       }
 
       // -------- 3) Receiving line must contain this item; qty within remaining --------
       const lineByHex = new Map<
         string,
-        { idx: number; approved: number; received: number }
+        { idx: number; approved: number; received: number; scrap: number }
       >();
       (rec.lines ?? []).forEach((l: any, i: number) => {
         const hex = new Types.ObjectId(l.itemId).toHexString();
@@ -459,104 +603,369 @@ export class ReceivingService {
           idx: i,
           approved: Number(l.approvedQty ?? 0),
           received: Number(l.receivedQty ?? 0),
+          scrap: Number(l.scrapQty ?? 0),
         });
       });
 
       const itemHex = itemId.toHexString();
       const line = lineByHex.get(itemHex);
       if (!line) {
-        // item not in this receiving
         return { msg: 'Receive Item Failed.......', status: false };
       }
 
-      const remaining = line.approved - line.received;
-      if (remaining <= 0 || qty > remaining) {
-        // cannot receive 0/negative or more than remaining approved
+      // remaining must account for both received and scrap
+      const totalIn = receiveQty + scrapQty;
+      const remaining = line.approved - (line.received + line.scrap);
+      if (remaining <= 0 || totalIn > remaining) {
         return { msg: 'Receive Item Failed.......', status: false };
       }
 
-      // -------- 4) Perform updates (can be wrapped in a session/transaction if desired) --------
-
-      // 4a) Update receiving line's receivedQty
-      const newReceived = line.received + qty;
+      // ---------- 4) Apply updates ----------
+      // (a) update line counters
+      const newReceived = line.received + receiveQty;
+      const newScrap = line.scrap + scrapQty;
       await this.recModel.updateOne(
         { _id: rec._id },
-        { $set: { [`lines.${line.idx}.receivedQty`]: newReceived } },
-      );
-
-      // 4b) Upsert StorePlaceItemQuantity (your quantities are strings)
-      const itemName = itemDoc?.name ?? '';
-      const placeName = placeDoc?.name ?? '';
-
-      let spiq = await this.spiqModel.findOne({
-        itemId: itemHex,
-        placeId: placeId.toHexString(),
-      });
-
-      if (!spiq) {
-        spiq = await this.spiqModel.create({
-          itemId: itemHex,
-          itemName,
-          placeId: placeId.toHexString(),
-          placeName,
-          totalQuantity: String(qty), // start with qty
-          IssuedQuantity: '0',
-          completedQuantity: '0',
-          remark: '',
-          createdBy: userIdRaw || String(rec.createdBy || ''),
-        });
-
-        // ensure the SPIQ id is linked in StorePlace
-        await this.placeModel.updateOne(
-          { _id: placeId },
-          { $addToSet: { StorePlaceItemQuantityIds: spiq._id } },
-        );
-      } else {
-        // increment its totalQuantity (string math)
-        const current = parseInt(spiq.totalQuantity || '0', 10) || 0;
-        spiq.totalQuantity = String(current + qty);
-        await spiq.save();
-      }
-
-      // 4c) Write stock movement
-      await this.movModel.create({
-        itemId,
-        placeId,
-        receivingId: recId,
-        type: 'RECEIVE',
-        qty, // positive
-        refNo: String(rec.recNo || ''),
-        operatedBy: operatedBy ?? new Types.ObjectId(rec.createdBy),
-        note: 'Receive to place',
-      });
-
-      // 4d) Increase item stock counters (do NOT exceed approved — we checked already)
-      await this.itemModel.updateOne(
-        { _id: itemId },
         {
-          $inc: {
-            stockAvailableQuantity: qty,
-            totalStockQuantity: qty,
+          $set: {
+            [`lines.${line.idx}.receivedQty`]: newReceived,
+            [`lines.${line.idx}.scrapQty`]: newScrap,
           },
         },
       );
 
-      // 4e) Auto-close receiving if all fully received
+      // (b) if receive > 0, upsert SPIQ and increment totals
+      if (receiveQty > 0) {
+        const itemName = itemDoc?.name ?? '';
+        const placeName = placeDoc?.name ?? '';
+
+        let spiq = await this.spiqModel.findOne({
+          itemId: itemHex,
+          placeId: placeId.toHexString(),
+        });
+
+        if (!spiq) {
+          spiq = await this.spiqModel.create({
+            itemId: itemHex,
+            itemName,
+            placeId: placeId.toHexString(),
+            placeName,
+            totalQuantity: String(receiveQty), // starts with received qty
+            IssuedQuantity: '0',
+            completedQuantity: '0',
+            remark: '',
+            createdBy: userIdRaw || String(rec.createdBy || ''),
+          });
+
+          // link SPIQ to place
+          await this.placeModel.updateOne(
+            { _id: placeId },
+            { $addToSet: { StorePlaceItemQuantityIds: spiq._id } },
+          );
+        } else {
+          // increment totalQuantity (string math)
+          const current = parseInt(spiq.totalQuantity || '0', 10) || 0;
+          spiq.totalQuantity = String(current + receiveQty);
+          await spiq.save();
+        }
+
+        // (c) item stock: add only the received quantity
+        const resAvail = await this.itemModel.updateOne(
+          { _id: itemId },
+          {
+            $inc: {
+              stockAvailableQuantity: receiveQty,
+              totalStockQuantity: receiveQty,
+            },
+          },
+        );
+        if (resAvail.matchedCount !== 1) {
+          // very unlikely here, but keep the guard
+          throw new Error('Item stock update failed');
+        }
+
+        // (d) movement for receive
+        await this.movModel.create({
+          itemId,
+          placeId,
+          receivingId: recId,
+          type: 'RECEIVE',
+          qty: receiveQty,
+          refNo: String(rec.recNo || ''),
+          operatedBy: operatedBy ?? new Types.ObjectId(rec.createdBy),
+          note: 'Receive to place',
+        });
+      }
+
+      // (e) if scrap > 0, add to item scrap counter and movement
+      if (scrapQty > 0) {
+        const resScrap = await this.itemModel.updateOne(
+          { _id: itemId },
+          { $inc: { stockscrapQuantity: scrapQty } },
+        );
+        if (resScrap.matchedCount !== 1) {
+          throw new Error('Item scrap update failed');
+        }
+
+        await this.movModel.create({
+          itemId,
+          placeId,
+          receivingId: recId,
+          type: 'SCRAP',
+          qty: scrapQty,
+          refNo: String(rec.recNo || ''),
+          operatedBy: operatedBy ?? new Types.ObjectId(rec.createdBy),
+          note: 'Scrapped during receiving',
+        });
+      }
+
+      // (f) auto-close when each line is fully handled (received + scrap >= approved)
       const fresh = await this.recModel.findById(rec._id, { lines: 1 }).lean();
-      const fullyReceived = (fresh?.lines ?? []).every(
-        (l: any) => Number(l.receivedQty ?? 0) >= Number(l.approvedQty ?? 0),
+      const fullyDone = (fresh?.lines ?? []).every(
+        (l: any) =>
+          Number(l.receivedQty ?? 0) + Number(l.scrapQty ?? 0) >=
+          Number(l.approvedQty ?? 0),
       );
-      if (fullyReceived) {
+      if (fullyDone) {
         const closeSet: any = { status: 'CLOSED', closedAt: new Date() };
         if (operatedBy) closeSet.closedBy = operatedBy;
         await this.recModel.updateOne({ _id: rec._id }, { $set: closeSet });
       }
 
-      // -------- 5) Done --------
       return { msg: 'Receive To Place Completed.......', status: true };
     } catch (err) {
       this.logger.error(`receiveToPlaceOne failed: ${err?.message || err}`);
       return { msg: 'Receive Item Failed.......', status: false };
     }
+  }
+
+  async closeReceive(dto: any) {
+    try {
+      // ---- basic payload checks ----
+      if (!dto?.id || !isValidObjectId(dto.id)) {
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+      const userIdRaw = dto?.userId ? String(dto.userId).trim() : '';
+      const operatedBy =
+        userIdRaw && isValidObjectId(userIdRaw)
+          ? new Types.ObjectId(userIdRaw)
+          : undefined;
+
+      // ---- load receiving with lines ----
+      const rec = await this.recModel
+        .findById(dto.id, { status: 1, recNo: 1, lines: 1, createdBy: 1 })
+        .lean();
+
+      if (!rec) {
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+      if (rec.status === 'CLOSED' || rec.status === 'CANCELLED') {
+        // already terminal
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+      if (rec.status !== 'APPROVED') {
+        // keep consistent with your receive flow
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+
+      // ---- validate lines: fully received and never over-received ----
+      const lines = Array.isArray(rec.lines) ? rec.lines : [];
+      for (const l of lines) {
+        const approved = Number(l?.approvedQty ?? 0);
+        const received = Number(l?.receivedQty ?? 0);
+        if (received > approved) {
+          return { msg: 'Receive Item Failed.......', status: false };
+        }
+        if (received < approved) {
+          return { msg: 'Receive Item Failed.......', status: false };
+        }
+      }
+
+      // ---- mark CLOSED (guard current status) ----
+      const setDoc: any = {
+        status: 'CLOSED',
+        closedAt: new Date(),
+      };
+      if (operatedBy) setDoc.closedBy = operatedBy;
+
+      const upd = await this.recModel.updateOne(
+        { _id: rec._id, status: 'APPROVED' },
+        { $set: setDoc },
+      );
+      if (upd.matchedCount !== 1 || upd.modifiedCount !== 1) {
+        return { msg: 'Receive Item Failed.......', status: false };
+      }
+
+      // ---- movement audit (no stock delta): one per line, qty = 0, type = ADJUST ----
+      try {
+        const mvts = (lines || []).map((l: any) => ({
+          itemId: new Types.ObjectId(l.itemId),
+          // If placeId is required in your schema and you don't have one here,
+          // you can set '' (as used elsewhere in your codebase) or make the field optional.
+          placeId: '', // keep consistent with your earlier usage
+          receivingId: new Types.ObjectId(rec._id),
+          type: 'ADJUST' as const,
+          qty: 0,
+          refNo: String(rec.recNo ?? ''),
+          operatedBy: operatedBy ?? new Types.ObjectId(rec.createdBy),
+          note: 'Receiving closed',
+        }));
+        if (mvts.length) {
+          await this.movModel.insertMany(mvts);
+        }
+      } catch (e) {
+        // movement is audit-only; if it fails, we still keep the document closed
+        this.logger.warn(
+          `closeReceive movement log failed: ${e?.message || e}`,
+        );
+      }
+
+      return { msg: 'Receive Closed.......', status: true };
+    } catch (err) {
+      this.logger.error(`closeReceive failed: ${err?.message || err}`);
+      return { msg: 'Receive Item Failed.......', status: false };
+    }
+  }
+
+  // service
+  async getStats(period: 'day' | 'week' | 'month') {
+    const now = new Date();
+    const start = new Date(now);
+    if (period === 'day') start.setHours(0, 0, 0, 0);
+    if (period === 'week') {
+      const d = now.getDay();
+      start.setDate(now.getDate() - ((d + 6) % 7));
+      start.setHours(0, 0, 0, 0);
+    }
+    if (period === 'month') {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+    }
+
+    const [recvAgg, issueAgg, creatorsRecv, creatorsIssue] = await Promise.all([
+      this.recModel.aggregate([
+        { $match: { createdAt: { $gte: start, $lte: now } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            v: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      this.movModel.aggregate([
+        { $match: { createdAt: { $gte: start, $lte: now } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            v: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      this.recModel.aggregate([
+        { $match: { createdAt: { $gte: start, $lte: now } } },
+        { $group: { _id: '$createdBy', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'u',
+            pipeline: [{ $project: { name: 1, email: 1 } }],
+          },
+        },
+        { $unwind: { path: '$u', preserveNullAndEmptyArrays: true } },
+        { $project: { name: { $ifNull: ['$u.name', '$u.email'] }, count: 1 } },
+      ]),
+      this.movModel.aggregate([
+        { $match: { createdAt: { $gte: start, $lte: now } } },
+        { $group: { _id: '$createdBy', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'u',
+            pipeline: [{ $project: { name: 1, email: 1 } }],
+          },
+        },
+        { $unwind: { path: '$u', preserveNullAndEmptyArrays: true } },
+        { $project: { name: { $ifNull: ['$u.name', '$u.email'] }, count: 1 } },
+      ]),
+    ]);
+
+    const recvTotal = recvAgg.reduce((a, b) => a + (b.v || 0), 0);
+    const issueTotal = issueAgg.reduce((a, b) => a + (b.v || 0), 0);
+
+    // Merge top creators from both collections
+    const topMap = new Map<string, number>();
+    for (const x of creatorsRecv)
+      topMap.set(x.name, (topMap.get(x.name) ?? 0) + (x.count ?? 0));
+    for (const x of creatorsIssue)
+      topMap.set(x.name, (topMap.get(x.name) ?? 0) + (x.count ?? 0));
+    const topCreators = [...topMap.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    const toSeries = (arr: any[]) =>
+      arr.map((e) => ({ t: e._id, v: e.v || 0 }));
+
+    return {
+      receivingsTotal: recvTotal,
+      issuesTotal: issueTotal,
+      netMovement: recvTotal - issueTotal,
+      uniqueCreators: topMap.size,
+      topCreators,
+      recvSeries: toSeries(recvAgg),
+      issueSeries: toSeries(issueAgg),
+    };
+  }
+
+  async getRecent(limit = 20) {
+    // union recent receivings + issues with labels; or do two queries and merge/sort in JS
+    const [r, i] = await Promise.all([
+      this.recModel
+        .find({}, { recNo: 1, createdAt: 1, status: 1, createdBy: 1 })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean(),
+      this.movModel
+        .find({}, { issNo: 1, createdAt: 1, status: 1, createdBy: 1 })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const rows = [
+      ...r.map((x: any) => ({
+        type: 'RECEIVING',
+        no: x.recNo,
+        createdAt: x.createdAt,
+        status: x.status,
+        createdBy: x.createdBy,
+        _id: x._id,
+      })),
+      ...i.map((x: any) => ({
+        type: 'ISSUE',
+        no: x.issNo,
+        createdAt: x.createdAt,
+        status: x.status,
+        createdBy: x.createdBy,
+        _id: x._id,
+      })),
+    ];
+
+    // attach creator name
+    // (optional: batch lookup by unique createdBy ids)
+    // keep example simple or add $lookup in aggregation
+
+    rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    return rows.slice(0, limit);
   }
 }

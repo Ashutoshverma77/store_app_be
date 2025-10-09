@@ -56,9 +56,23 @@ export class ItemReceiveController {
     return data;
   }
 
+  @Put('receivereject')
+  async receiveReject(@Param('id') id: string, @Body() payload: any) {
+    var data = await this.itemReceiveService.rejectReceive(payload);
+    this.gateway.broadcastAuthList().catch(() => {});
+    return data;
+  }
+
   @Put('receivetoplace')
   async receivetoplace(@Body() payload: any) {
     var data = await this.itemReceiveService.receiveToPlaceOne(payload);
+    this.gateway.broadcastAuthList().catch(() => {});
+    return data;
+  }
+
+  @Put('receiveclose')
+  async receiveclose(@Body() payload: any) {
+    var data = await this.itemReceiveService.closeReceive(payload);
     this.gateway.broadcastAuthList().catch(() => {});
     return data;
   }

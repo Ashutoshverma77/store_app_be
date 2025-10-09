@@ -45,10 +45,10 @@ export class User extends Document {
   @Prop({ default: [] }) // <— subdocs
   apps: string[];
 
-   @Prop({ default: [] }) // <— subdocs
+  @Prop({ default: [] }) // <— subdocs
   appWorks: string[];
 
-  @Prop() photoUrl: string;
+  @Prop({ default: '' }) imageUrl: string;
 
   @Prop() signatureUrl: string;
 }

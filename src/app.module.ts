@@ -6,6 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { FeaturesModule } from './features/features.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { UpdateModule } from './update/update.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AppService } from './app.service.js';
       connectionName: 'store',
     }),
     FeaturesModule,
+    UpdateModule,
   ],
 
   controllers: [AppController],

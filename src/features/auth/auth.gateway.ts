@@ -92,6 +92,13 @@ export class AuthGateway {
     return;
   }
 
+  @SubscribeMessage('auth:listUsersPaged')
+  async listUsersPaged(client: any, body: any) {
+    var authUserList = await this.auth.findUserPaged(body);
+    client.emit('auth:listUsersPaged', authUserList);
+    return;
+  }
+
   @SubscribeMessage('auth:findOne')
   async findOne(client: any, payload: any) {
     var authUserList = await this.auth.findOneUsers(payload.id);

@@ -1,9 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // ⬇️ Allow large JSON / form bodies (50 MB)
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ limit: '50mb', extended: true }));
+
   app.enableCors({
     origin: '*', // Replace with specific origins if needed
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Include all allowed methods

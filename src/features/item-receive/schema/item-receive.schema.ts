@@ -7,6 +7,7 @@ class ReceivingLine {
   @Prop({ required: true, min: 1 }) requestedQty: number;
   @Prop({ default: 0, min: 0 }) approvedQty: number; // set during approval
   @Prop({ default: 0, min: 0 }) receivedQty: number; // accumulated actual receive
+  @Prop({ default: 0, min: 0 }) scrapQty: number; // accumulated actual receive
   @Prop({ default: '' }) unit: string;
 }
 

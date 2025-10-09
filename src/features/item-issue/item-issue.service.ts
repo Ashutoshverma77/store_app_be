@@ -430,7 +430,6 @@ export class IssueService {
             {
               $inc: {
                 stockAvailableQuantity: -qty,
-                totalStockQuantity: -qty,
               },
             },
             // { session }
@@ -593,6 +592,82 @@ export class IssueService {
     return await this.issModel.findById(id);
   }
 
+  async findPaged(body: any) {
+    const page = Math.max(1, Number(body?.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(body?.limit ?? 12)));
+    const skip = (page - 1) * limit;
+
+    const s = String(body?.search ?? '').trim();
+    const status = (body?.status ?? null) as string | null;
+    const sortStr = String(body?.sort ?? '-createdAt');
+    const dir = sortStr.startsWith('-') ? -1 : 1;
+    const field = sortStr.replace(/^-/, '') || 'createdAt';
+    const sort: Record<string, 1 | -1> = { [field]: dir };
+
+    const q: any = {};
+    if (status) q.status = status;
+
+    if (s) {
+      q.$or = [
+        { issNo: { $regex: s, $options: 'i' } },
+        { reason: { $regex: s, $options: 'i' } },
+        // If your Issue has items embedded with names:
+        // { 'lines.itemName': { $regex: s, $options: 'i' } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      this.issModel.find(q).sort(sort).skip(skip).limit(limit).lean(),
+      this.issModel.countDocuments(q),
+    ]);
+    return { rows, total, page, limit };
+  }
+
+  async findStatusPaged(body: any) {
+    const page = Math.max(1, Number(body?.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(body?.limit ?? 10)));
+    const skip = (page - 1) * limit;
+
+    const s = String(body?.search ?? '').trim();
+    const status = (body?.status ?? null) as string | null;
+
+    const sortStr = String(body?.sort ?? '-createdAt');
+    const dir = sortStr.startsWith('-') ? -1 : 1;
+    const field = sortStr.replace(/^-/, '') || 'createdAt';
+    const sort: Record<string, 1 | -1> = { [field]: dir };
+
+    const q: any = {};
+    if (status) q.status = status;
+
+    if (s) {
+      q.$or = [
+        { issNo: { $regex: s, $options: 'i' } },
+        { reason: { $regex: s, $options: 'i' } },
+        // works if you store itemName in the line:
+        { 'lines.itemName': { $regex: s, $options: 'i' } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      this.issModel.find(q).sort(sort).skip(skip).limit(limit).lean(),
+      this.issModel.countDocuments(q),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findListByItem(itemIdRaw: string) {
+    const itemId = new Types.ObjectId(itemIdRaw);
+
+    // Query APPROVED issues that contain this item in lines
+    return await this.issModel
+      .find(
+        { status: 'APPROVED', 'lines.itemId': itemId },
+        { _id: 1, issNo: 1, lines: 1 },
+      )
+      .lean();
+  }
+
   async findStatus(status: string[]) {
     return await this.issModel
       .find({ status: { $in: status } })
@@ -650,7 +725,7 @@ export class IssueService {
       // ---- build line map from issue ----
       const lineByItem = new Map<
         string,
-        { idx: number; approved: number; issued: number }
+        { idx: number; approved: number; issued: number; returned: number }
       >();
       (issueDoc.lines ?? []).forEach((l: any, i: number) => {
         const hex = new Types.ObjectId(l.itemId).toHexString();
@@ -658,6 +733,7 @@ export class IssueService {
           idx: i,
           approved: Number(l.approvedQty ?? 0),
           issued: Number(l.issuedQty ?? 0),
+          returned: Number(l.returnQty ?? 0),
         });
       });
 
@@ -674,6 +750,9 @@ export class IssueService {
       // ---- remaining check ----
       const remaining = line.approved - line.issued;
       if (qty > remaining) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+      if (0 > remaining) {
         return { msg: 'Issue Item Failed.......', status: false };
       }
 
@@ -701,9 +780,15 @@ export class IssueService {
       try {
         // 1) Update issue line
         const newIssued = line.issued + qty;
+        const newApproved = line.approved - qty;
         await this.issModel.updateOne(
           { _id: issueDoc._id },
-          { $set: { [`lines.${line.idx}.issuedQty`]: newIssued } },
+          {
+            $set: {
+              [`lines.${line.idx}.issuedQty`]: newIssued,
+              [`lines.${line.idx}.approvedQty`]: newApproved,
+            },
+          },
         );
 
         // 2) Update StoreItem counters: move reserved -> completed
@@ -842,7 +927,14 @@ export class IssueService {
       }
       const line = issueDoc.lines[lineIndex];
       const issuedSoFar = Number(line.issuedQty ?? 0);
+      const returnSoFar = Number(line.returnQty ?? 0);
+      const checkissue = Number(line.issuedQty ?? 0) - qty;
       if (qty > issuedSoFar) {
+        // cannot return more than issued
+        return { msg: 'Return Item Failed.......', status: false };
+      }
+
+      if (0 > checkissue) {
         // cannot return more than issued
         return { msg: 'Return Item Failed.......', status: false };
       }
@@ -876,9 +968,15 @@ export class IssueService {
       try {
         // (a) Decrease issue line's issuedQty (cannot go below 0)
         const newIssuedQty = issuedSoFar - qty;
+        const newReturnQty = returnSoFar + qty;
         const resIssue = await this.issModel.updateOne(
           { _id: issueId },
-          { $set: { [`lines.${lineIndex}.issuedQty`]: newIssuedQty } },
+          {
+            $set: {
+              [`lines.${lineIndex}.issuedQty`]: newIssuedQty,
+              [`lines.${lineIndex}.returnQty`]: newReturnQty,
+            },
+          },
           // { session }
         );
         if (resIssue.matchedCount !== 1) {
@@ -969,6 +1067,203 @@ export class IssueService {
     } catch (e) {
       this.logger.error(`returnToStock failed: ${e?.message || e}`);
       return { msg: 'Return Item Failed.......', status: false };
+    }
+  }
+
+  // Close an APPROVED Issue by releasing all remaining (approvedQty) back to stock.
+  // Rules:
+  // - IDs valid & exist.
+  // - Issue must be APPROVED (already using the "approvedQty is remaining" model).
+  // - For each line, let rem = approvedQty. If rem > 0,
+  //     * StoreItem: stockAvailableQuantity += rem; stockIssueQuantity -= rem  (atomic guard)
+  //     * Line: approvedQty = 0; returnQty = 0 (remaining goes to zero on close)
+  // - If every line already has approvedQty == 0, we just mark CLOSED.
+  // - Write an ADJUST movement per item (optional) to record the release of reservations.
+
+  async closeIssue(dto: any) {
+    try {
+      const idRaw = String(dto?.id ?? '').trim();
+      const userIdRaw = dto?.userId ? String(dto.userId).trim() : '';
+
+      if (!isValidObjectId(idRaw)) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+      if (userIdRaw && !isValidObjectId(userIdRaw)) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      const issueId = new Types.ObjectId(idRaw);
+      const closer = userIdRaw ? new Types.ObjectId(userIdRaw) : undefined;
+
+      // 1) Load issue
+      const iss = await this.issModel
+        .findById(issueId, { issNo: 1, status: 1, lines: 1, createdBy: 1 })
+        .lean();
+
+      if (!iss) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+      if (iss.status !== 'APPROVED') {
+        // Only APPROVED issues can be closed by releasing remaining reservations.
+        // (If you want to allow CLOSING from DRAFT, change the check here.)
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      const lines = (iss.lines ?? []) as any[];
+      if (lines.length === 0) {
+        // no lines -> just close
+        await this.issModel.updateOne(
+          { _id: issueId },
+          {
+            $set: {
+              status: 'CLOSED',
+              closedAt: new Date(),
+              ...(closer ? { closedBy: closer } : {}),
+            },
+          },
+        );
+        return { msg: 'Issue Closed.......', status: true };
+      }
+
+      // 2) Gather remaining per item
+      type LineInfo = { idx: number; itemId: Types.ObjectId; approved: number };
+      const remainPerLine: LineInfo[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        const itemId = l?.itemId ? new Types.ObjectId(l.itemId) : undefined;
+        if (!itemId) {
+          return { msg: 'Issue Item Failed.......', status: false };
+        }
+        const approvedQty = Number(l?.approvedQty ?? 0); // remaining
+        if (!Number.isInteger(approvedQty) || approvedQty < 0) {
+          return { msg: 'Issue Item Failed.......', status: false };
+        }
+        remainPerLine.push({ idx: i, itemId, approved: approvedQty });
+      }
+
+      const totalRemaining = remainPerLine.reduce((a, b) => a + b.approved, 0);
+
+      // 3) If nothing remains, just close
+      if (totalRemaining === 0) {
+        await this.issModel.updateOne(
+          { _id: issueId },
+          {
+            $set: {
+              status: 'CLOSED',
+              closedAt: new Date(),
+              ...(closer ? { closedBy: closer } : {}),
+            },
+          },
+        );
+        return { msg: 'Issue Closed.......', status: true };
+      }
+
+      // 4) Validate items exist and we have enough reserved to release
+      const itemIds = Array.from(
+        new Set(remainPerLine.map((x) => x.itemId.toHexString())),
+      ).map((h) => new Types.ObjectId(h));
+
+      const items = await this.itemModel
+        .find(
+          { _id: { $in: itemIds } },
+          { _id: 1, stockAvailableQuantity: 1, stockIssueQuantity: 1 },
+        )
+        .lean();
+
+      if (items.length !== itemIds.length) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      const reservedByHex: Record<string, number> = {};
+      for (const it of items) {
+        reservedByHex[new Types.ObjectId(it._id).toHexString()] = Number(
+          it.stockIssueQuantity ?? 0,
+        );
+      }
+
+      // per-item sum of remaining
+      const needPerItem: Record<string, number> = {};
+      for (const r of remainPerLine) {
+        const hex = r.itemId.toHexString();
+        needPerItem[hex] = (needPerItem[hex] ?? 0) + r.approved;
+      }
+
+      for (const [hex, need] of Object.entries(needPerItem)) {
+        if ((reservedByHex[hex] ?? 0) < need) {
+          // You cannot release more than currently reserved
+          return { msg: 'Issue Item Failed.......', status: false };
+        }
+      }
+
+      // 5) Apply updates
+      try {
+        // (a) Release reserves on StoreItem
+        for (const [hex, qty] of Object.entries(needPerItem)) {
+          const res = await this.itemModel.updateOne(
+            {
+              _id: new Types.ObjectId(hex),
+              stockIssueQuantity: { $gte: qty }, // guard: never negative
+            },
+            {
+              $inc: {
+                stockAvailableQuantity: +qty, // back to available
+                stockIssueQuantity: -qty, // release reservation
+              },
+            },
+          );
+          if (res.matchedCount !== 1 || res.modifiedCount !== 1) {
+            throw new Error('Reserved stock would go negative');
+          }
+        }
+
+        // (b) Zero out remaining on lines (approvedQty -> 0; returnQty -> 0 to reflect no remaining)
+        const setPaths: Record<string, any> = {};
+        for (const r of remainPerLine) {
+          if (r.approved > 0) {
+            setPaths[`lines.${r.idx}.approvedQty`] = 0;
+            // setPaths[`lines.${r.idx}.returnQty`] = 0;
+          }
+        }
+        await this.issModel.updateOne(
+          { _id: issueId },
+          {
+            $set: {
+              ...setPaths,
+              status: 'CLOSED',
+              closedAt: new Date(),
+              ...(closer ? { closedBy: closer } : {}),
+            },
+          },
+        );
+
+        // (c) Optional movement log per item for the release action
+        const movements: any[] = [];
+        for (const [hex, qty] of Object.entries(needPerItem)) {
+          if (qty <= 0) continue;
+          movements.push({
+            itemId: new Types.ObjectId(hex),
+            // placeId is unknown/global in this step
+            type: 'ADJUST',
+            qty: 0, // semantic: reservation release (no physical move)
+            refNo: String(iss.issNo ?? ''),
+            operatedBy: closer ?? new Types.ObjectId(iss.createdBy),
+            note: `Issue close: release remaining ${qty} to available`,
+            issueId: issueId,
+          });
+        }
+        if (movements.length) {
+          await this.movModel.insertMany(movements);
+        }
+      } catch (e) {
+        this.logger.error(`closeIssue tx failed: ${e?.message || e}`);
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      return { msg: 'Issue Closed.......', status: true };
+    } catch (e) {
+      this.logger.error(`closeIssue failed: ${e?.message || e}`);
+      return { msg: 'Issue Item Failed.......', status: false };
     }
   }
 }
