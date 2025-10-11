@@ -124,6 +124,7 @@ export class IssueService {
         requestedQty: v.qty, // requested for issue
         approvedQty: 0, // approval flow (if you use it)
         issuedQty: 0, // actual issued later
+        returnQty: 0, // actual issued later
         unit: v.unit ?? '',
       }));
 
@@ -425,15 +426,15 @@ export class IssueService {
           const idHex = String(it._id);
           const qty = toDeductByItem[idHex];
 
-          await this.itemModel.updateOne(
-            { _id: it._id },
-            {
-              $inc: {
-                stockAvailableQuantity: -qty,
-              },
-            },
-            // { session }
-          );
+          // await this.itemModel.updateOne(
+          //   { _id: it._id },
+          //   {
+          //     $inc: {
+          //       stockAvailableQuantity: -qty,
+          //     },
+          //   },
+          //   // { session }
+          // );
 
           await this.movModel.create(
             [
@@ -647,7 +648,7 @@ export class IssueService {
         { 'lines.itemName': { $regex: s, $options: 'i' } },
       ];
     }
-
+    console.log(q);
     const [rows, total] = await Promise.all([
       this.issModel.find(q).sort(sort).skip(skip).limit(limit).lean(),
       this.issModel.countDocuments(q),
@@ -725,12 +726,19 @@ export class IssueService {
       // ---- build line map from issue ----
       const lineByItem = new Map<
         string,
-        { idx: number; approved: number; issued: number; returned: number }
+        {
+          idx: number;
+          requested: number;
+          approved: number;
+          issued: number;
+          returned: number;
+        }
       >();
       (issueDoc.lines ?? []).forEach((l: any, i: number) => {
         const hex = new Types.ObjectId(l.itemId).toHexString();
         lineByItem.set(hex, {
           idx: i,
+          requested: Number(l.requestedQty ?? 0),
           approved: Number(l.approvedQty ?? 0),
           issued: Number(l.issuedQty ?? 0),
           returned: Number(l.returnQty ?? 0),
@@ -748,7 +756,7 @@ export class IssueService {
       }
 
       // ---- remaining check ----
-      const remaining = line.approved - line.issued;
+      const remaining = line.requested - line.issued;
       if (qty > remaining) {
         return { msg: 'Issue Item Failed.......', status: false };
       }
@@ -835,9 +843,23 @@ export class IssueService {
         // 5) Auto-close if fully issued
         const fresh = await this.issModel.findById(issueDoc._id).lean();
         const fullyIssued = (fresh?.lines ?? []).every(
-          (l: any) => Number(l.issuedQty ?? 0) >= Number(l.approvedQty ?? 0),
+          (l: any) => Number(l.issuedQty ?? 0) >= Number(l.requestedQty ?? 0),
         );
         if (fullyIssued) {
+          await this.movModel.create({
+            itemId,
+            placeId,
+            issueId,
+            type: 'CLOSED',
+            qty: 0,
+            refNo: String(issueDoc.issNo ?? ''),
+            operatedBy:
+              dto.userId && isValidObjectId(dto.userId)
+                ? new Types.ObjectId(dto.userId)
+                : new Types.ObjectId(issueDoc.createdBy),
+            note: 'Issue to place (reserved → completed)',
+          });
+
           await this.issModel.updateOne(
             { _id: issueDoc._id },
             {
@@ -950,14 +972,18 @@ export class IssueService {
         return { msg: 'Return Item Failed.......', status: false };
       }
       const spiqIssued = this.toInt(spiq.IssuedQuantity);
-      if (qty > spiqIssued) {
+
+      console.log(qty);
+      console.log(spiqIssued);
+
+      if (qty >= spiqIssued) {
         // cannot lower IssuedQuantity below 0
         return { msg: 'Return Item Failed.......', status: false };
       }
 
       // --------- 5) StoreItem guard: stockissueCompleted must be >= qty ----------
       const sic = Number(itemDoc.stockissueCompleted ?? 0);
-      if (sic < qty) {
+      if (sic <= qty) {
         // cannot make stockissueCompleted negative
         return { msg: 'Return Item Failed.......', status: false };
       }
@@ -1017,7 +1043,7 @@ export class IssueService {
           throw new Error('SPIQ.IssuedQuantity would go negative');
         }
         spiqDoc.IssuedQuantity = this.toStr(curIssued - qty);
-        spiqDoc.totalQuantity = this.toStr(curtotalQty + qty);
+        // spiqDoc.totalQuantity = this.toStr(curtotalQty + qty);
         await spiqDoc.save(); // { session }
 
         // (d) Movement: RETURN
@@ -1244,7 +1270,7 @@ export class IssueService {
           movements.push({
             itemId: new Types.ObjectId(hex),
             // placeId is unknown/global in this step
-            type: 'ADJUST',
+            type: 'CLOSED',
             qty: 0, // semantic: reservation release (no physical move)
             refNo: String(iss.issNo ?? ''),
             operatedBy: closer ?? new Types.ObjectId(iss.createdBy),

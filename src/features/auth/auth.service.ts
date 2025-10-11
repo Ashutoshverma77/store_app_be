@@ -258,6 +258,14 @@ export class AuthService {
       };
     }
 
+    if (user.isActive == false) {
+      return {
+        token: '',
+        msg: 'You Are Currently Not Active....',
+        status: false,
+      };
+    }
+
     const ok = await bcrypt.compare(loginDto.password, user.password);
     if (!ok) {
       return {

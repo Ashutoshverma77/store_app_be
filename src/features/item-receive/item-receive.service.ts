@@ -701,7 +701,12 @@ export class ReceivingService {
       if (scrapQty > 0) {
         const resScrap = await this.itemModel.updateOne(
           { _id: itemId },
-          { $inc: { stockscrapQuantity: scrapQty } },
+          {
+            $inc: {
+              stockscrapQuantity: scrapQty,
+              totalStockQuantity: scrapQty,
+            },
+          },
         );
         if (resScrap.matchedCount !== 1) {
           throw new Error('Item scrap update failed');
@@ -773,12 +778,15 @@ export class ReceivingService {
       for (const l of lines) {
         const approved = Number(l?.approvedQty ?? 0);
         const received = Number(l?.receivedQty ?? 0);
+
+        console.log(l?.approvedQty);
+        console.log(l?.receivedQty);
         if (received > approved) {
           return { msg: 'Receive Item Failed.......', status: false };
         }
-        if (received < approved) {
-          return { msg: 'Receive Item Failed.......', status: false };
-        }
+        // if (received < approved) {
+        //   return { msg: 'Receive Item Failed.......', status: false };
+        // }
       }
 
       // ---- mark CLOSED (guard current status) ----
@@ -804,7 +812,7 @@ export class ReceivingService {
           // you can set '' (as used elsewhere in your codebase) or make the field optional.
           placeId: '', // keep consistent with your earlier usage
           receivingId: new Types.ObjectId(rec._id),
-          type: 'ADJUST' as const,
+          type: 'CLOSED' as const,
           qty: 0,
           refNo: String(rec.recNo ?? ''),
           operatedBy: operatedBy ?? new Types.ObjectId(rec.createdBy),

@@ -24,12 +24,10 @@ export class RegisterDto {
   @IsNotEmpty()
   isSuperAdmin: boolean;
 
-  @IsArray()
-  @IsNotEmpty()
+ 
   apps: string[];
   
-  @IsArray()
-  @IsNotEmpty()
+
   appWorks: string[];
 
 }

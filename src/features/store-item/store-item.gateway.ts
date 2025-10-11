@@ -15,10 +15,15 @@ export class StoreItemGateway {
     private readonly storeItemService: storeItemService.StoreItemService,
   ) {}
 
-  // async broadcastAuthList() {
-  //   const list = await this.storeItemService.findAll();
-  //   this.server.emit('store:findAllStoreItem', list); // broadcast to all clients
-  // }
+  async broadcastStoreItems() {
+    const list = await this.storeItemService.findPaged({
+      page: 1,
+      limit: 8,
+      search: '',
+      sort: '-createdAt',
+    });
+    this.server.emit('store:findAllStoreItemFilter', list); // broadcast to all clients
+  }
 
   @SubscribeMessage('store:findAllStoreItem')
   async findAll(client: any, payload: any) {
@@ -51,18 +56,11 @@ export class StoreItemGateway {
     }
   }
   // Broadcast (same event name). You can call this whenever items change.
-  async broadcastStoreItems() {
-    const data = await this.storeItemService.findPaged({
-      page: 1,
-      limit: 8,
-      search: '',
-      sort: '-createdAt',
-    });
-    this.server.emit('store:findAllStoreItem', data);
-  }
 
   @SubscribeMessage('store:findOneStoreItem')
   async findOne(client: any, payload: any) {
+
+    
     var authUserList = await this.storeItemService.findOne(payload.id);
 
     client.emit('store:findOneStoreItem', authUserList);

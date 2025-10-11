@@ -23,7 +23,6 @@ export class ItemIssueGateway {
   @SubscribeMessage('store:findAllItemIssue')
   async findAll(client: any, payload: any) {
     var authUserList = await this.issueService.findAll();
-
     client.emit('store:findAllItemIssue', authUserList);
     return;
   }
@@ -37,10 +36,18 @@ export class ItemIssueGateway {
   }
 
   // src/store/issues.gateway.ts
-  @SubscribeMessage('store:findStatusItemIssuePaged')
-  async findStatusItemIssuePaged(client: any, body: any) {
+  @SubscribeMessage('store:findStatusItemIssueApprovedPaged')
+  async findStatusApprovedItemIssuePaged(client: any, body: any) {
     var authUserList = await this.issueService.findStatusPaged(body);
-    client.emit('store:findStatusItemIssuePaged', authUserList);
+    console.log(authUserList);
+    client.emit('store:findStatusItemIssueApprovedPaged', authUserList);
+  }
+
+  @SubscribeMessage('store:findStatusItemIssueClosePaged')
+  async findStatusCloseItemIssuePaged(client: any, body: any) {
+    var authUserList = await this.issueService.findStatusPaged(body);
+    console.log(authUserList);
+    client.emit('store:findStatusItemIssueClosePaged', authUserList);
   }
 
   @SubscribeMessage('store:findStatusItemIssue')
@@ -54,7 +61,6 @@ export class ItemIssueGateway {
   @SubscribeMessage('store:findOneItemIssue')
   async findOne(client: any, payload: any) {
     var authUserList = await this.issueService.findOne(payload.id);
-
     client.emit('store:findOneItemIssue', authUserList);
     return;
   }
@@ -62,7 +68,6 @@ export class ItemIssueGateway {
   @SubscribeMessage('issue:listByItem')
   async findListByItem(client: any, payload: any) {
     var authUserList = await this.issueService.findListByItem(payload.itemId);
-
     client.emit('issue:listByItem', authUserList);
     return;
   }

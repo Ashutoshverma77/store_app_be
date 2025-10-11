@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { json, urlencoded } from 'express';
+import * as express from 'express';
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -18,9 +20,10 @@ async function bootstrap() {
     maxAge: 12 * 60 * 60, // 12 hours in seconds
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-
+  app.use('/public', express.static(join(__dirname, '..', 'public')));
   await app.listen(process.env.PORT ?? 80);
 
-  console.log(`API on http://localhost:${process.env.PORT || 80}`);
+  console.log(`API on http://localhost:${process.env.PORT || 8080}`);
 }
+
 bootstrap();
