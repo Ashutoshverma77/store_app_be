@@ -138,6 +138,21 @@ export class ReceivingService {
       await doc.save(); // will throw if schema validation fails
       this.logger.debug(`Created Receiving ${doc._id} recNo=${doc.recNo}`);
 
+      const mvts = Array.from(merged.entries()).map(([itemId, v]) => ({
+        itemId: new Types.ObjectId(itemId),
+        placeId: '',
+        receivingId: doc._id,
+        type: 'CREATE',
+        qty: v.qty,
+        refNo: String(doc.recNo || ''),
+        operatedBy: new Types.ObjectId(dto.userId),
+        note: 'Receive Create',
+      }));
+
+      if (mvts.length) {
+        await this.movModel.insertMany(mvts);
+      }
+
       // EXACT response shape you want:
       return { msg: 'Receive Item Created.......', status: true };
     } catch (e) {
@@ -357,6 +372,21 @@ export class ReceivingService {
       // keep status DRAFT
       await rec.save();
 
+      const mvts = Array.from(merged.entries()).map(([itemId, v]) => ({
+        itemId: new Types.ObjectId(itemId),
+        placeId: '',
+        receivingId: rec._id,
+        type: 'EDIT',
+        qty: v.qty,
+        refNo: String(rec.recNo || ''),
+        operatedBy: new Types.ObjectId(dto.userId),
+        note: 'Receive Edit',
+      }));
+
+      if (mvts.length) {
+        await this.movModel.insertMany(mvts);
+      }
+
       return { msg: 'Receive Item Updated.......', status: true }; // if you want "Updated......." change just the text
     } catch (e) {
       // this.logger.error('Update draft failed', e as any);
@@ -466,6 +496,18 @@ export class ReceivingService {
       }
 
       await this.recModel.updateOne({ _id: rec._id }, update);
+      for (const raw of dto.lines) {
+        await this.movModel.create({
+          itemId: raw.itemid,
+          placeId: '',
+          receivingId: rec._id,
+          type: 'APPROVED',
+          qty: raw.approvedqty ?? 0,
+          refNo: String(rec.recNo || ''),
+          operatedBy: new Types.ObjectId(dto.userId),
+          note: 'Receive Approved',
+        });
+      }
 
       return { msg: 'Receive Item Approved.......', status: true };
     } catch (err) {
@@ -524,6 +566,18 @@ export class ReceivingService {
         { _id: rec._id },
         { $set: { ...setPaths, ...setDoc } },
       );
+      for (const raw of rec.lines) {
+        await this.movModel.create({
+          itemId: raw.itemId,
+          placeId: '',
+          receivingId: rec._id,
+          type: 'CANCELLED',
+          qty: raw.requestedQty,
+          refNo: String(rec.recNo || ''),
+          operatedBy: new Types.ObjectId(dto.userId),
+          note: 'Receive Cancelled',
+        });
+      }
 
       return { msg: 'Receive Item Rejected.......', status: true };
     } catch (err) {

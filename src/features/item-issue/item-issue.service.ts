@@ -162,6 +162,20 @@ export class IssueService {
 
       // (Optional) Movement log: “RESERVE” (custom) or “ADJUST” with qty 0
       // await this.movModel.insertMany([...]);
+      const mvts = Array.from(merged.entries()).map(([itemId, v]) => ({
+        itemId: new Types.ObjectId(itemId),
+        placeId: '',
+        receivingId: '',
+        issueId: issDoc._id,
+        type: 'CREATE',
+        qty: v.qty,
+        refNo: '',
+        operatedBy: new Types.ObjectId(dto.userId),
+        note: 'Issue Create',
+      }));
+      if (mvts.length) {
+        await this.movModel.insertMany(mvts);
+      }
 
       return { msg: 'Issue Item Created.......', status: true };
     } catch (e) {
@@ -304,6 +318,22 @@ export class IssueService {
         },
       );
 
+      const mvts = Array.from(merged.entries()).map(([idHex, v]) => ({
+        itemId: new Types.ObjectId(idHex),
+        placeId: '',
+        receivingId: '',
+        issueId: issue._id,
+        type: 'EDIT',
+        qty: v.qty,
+        refNo: '',
+        operatedBy: new Types.ObjectId(dto.userId),
+        note: 'Issue Edit',
+      }));
+
+      if (mvts.length) {
+        await this.movModel.insertMany(mvts);
+      }
+
       return { msg: 'Issue Item Updated.......', status: true };
     } catch (err) {
       this.logger.error(`Issue update failed: ${err?.message || err}`);
@@ -443,7 +473,7 @@ export class IssueService {
                 placeId: '', // unknown/global at approval
                 receivingId: '', // not a receiving
                 issueId: new Types.ObjectId(iss._id),
-                type: 'ISSUE',
+                type: 'APPROVED',
                 qty, // positive; semantics = issue
                 refNo: String(iss.issNo),
                 operatedBy:
@@ -552,7 +582,7 @@ export class IssueService {
             placeId: '',
             receivingId: '',
             issueId: new Types.ObjectId(iss._id),
-            type: 'ADJUST' as const,
+            type: 'CANCELLED' as const,
             qty: Number(releaseByItem[iid]),
             refNo: String(iss.issNo ?? ''),
             operatedBy:

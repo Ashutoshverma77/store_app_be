@@ -1,11 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
-export type MovementType = 'RECEIVE' | 'ISSUE' | 'SCRAP' | 'ADJUST' | 'CLOSED';
+export type MovementType = 'CREATE' | 'EDIT'   | 'APPROVED'  | 'CANCELLED'  | 'RECEIVE'  | 'ISSUE'  | 'SCRAP'  | 'ADJUST'  | 'CLOSED';
 
 @Schema({ timestamps: true, versionKey: false })
 export class StockMovement {
-  @Prop({ type: Types.ObjectId, ref: 'StoreItem', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'StoreItem', default: '' })
   itemId: Types.ObjectId;
   @Prop({ type: Types.ObjectId, ref: 'StockPlace', default: '' })
   placeId: Types.ObjectId;
@@ -15,7 +15,18 @@ export class StockMovement {
   issueId: Types.ObjectId;
   @Prop({
     required: true,
-    enum: ['RECEIVE', 'ISSUE', 'SCRAP', 'ADJUST', 'RETURN', 'CLOSED'],
+    enum: [
+      'CREATE',
+      'EDIT',
+      'APPROVED',
+      'CANCELLED',
+      'RECEIVE',
+      'ISSUE',
+      'SCRAP',
+      'ADJUST',
+      'RETURN',
+      'CLOSED',
+    ],
   })
   type: MovementType;
   @Prop({ required: true }) qty: number; // + for receive/adjust up, - for issue/scrap/adjust down
