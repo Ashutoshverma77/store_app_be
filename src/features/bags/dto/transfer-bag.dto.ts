@@ -1,4 +1,4 @@
-import { IsMongoId, IsNumber, Min } from 'class-validator';
+import { IsMongoId, IsNumber, IsOptional, Min } from 'class-validator';
 
 export class TransferBagDto {
   @IsMongoId()
@@ -10,4 +10,7 @@ export class TransferBagDto {
   @IsNumber()
   @Min(0.000001)
   qty: number; // using number to support wt also
+
+  @IsOptional()
+  createdBy?: string;
 }

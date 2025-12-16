@@ -8,6 +8,7 @@ import { SortingJob, SortingJobSchema } from './entities/sorting-job.schema';
 import { Bag, BagSchema } from '../bags/entities/bag.schema';
 import { Item, ItemSchema } from '../items/entities/item.schema';
 import { SortingJobsGateway } from './sorting-job.gateway';
+import { ActivityModule } from '../activity/activity.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SortingJobsGateway } from './sorting-job.gateway';
       ],
       'store',
     ),
+    ActivityModule,
   ],
   controllers: [SortingJobsController],
   providers: [SortingJobsService, SortingJobsGateway],

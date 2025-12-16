@@ -1,5 +1,14 @@
 // src/sorting-jobs/dto/create-sorting-job.dto.ts
-import { IsArray, IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsMongoId,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateSortingJobInputBagDto {
@@ -32,4 +41,7 @@ export class CreateSortingJobDto {
   @ValidateNested({ each: true })
   @Type(() => CreateSortingJobInputBagDto)
   inputBags: CreateSortingJobInputBagDto[];
+
+  @IsOptional()
+  createdBy?: string;
 }

@@ -6,6 +6,7 @@ import { BagsController } from './bags.controller';
 import { Bag, BagSchema } from './entities/bag.schema';
 import { Item, ItemSchema } from '../items/entities/item.schema';
 import { BagGateway } from './bags.gateway';
+import { ActivityModule } from '../activity/activity.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { BagGateway } from './bags.gateway';
       ],
       'store',
     ),
+    ActivityModule,
   ],
   controllers: [BagsController],
   providers: [BagsService, BagGateway],

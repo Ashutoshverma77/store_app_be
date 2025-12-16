@@ -38,7 +38,7 @@ export class CreateBagDto {
   @IsNumber()
   @Min(0)
   transferQty?: number;
-F
+  F;
   @IsOptional()
   @IsIn(['other_bag', 'sorting_machine', 'inStock'])
   transferType?: 'other_bag' | 'sorting_machine' | 'inStock';
@@ -47,4 +47,7 @@ F
   @IsInt()
   @Min(0)
   maxQty?: number;
+
+  @IsOptional()
+  createdBy?: string;
 }

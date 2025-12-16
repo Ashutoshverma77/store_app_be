@@ -7,6 +7,8 @@ import {
   Patch,
   Param,
   Delete,
+  Put,
+  Query,
 } from '@nestjs/common';
 import { SizesService } from './sizes.service';
 import { CreateSizeDto } from './dto/create-size.dto';
@@ -32,13 +34,16 @@ export class SizesController {
     return this.sizesService.findOne(id);
   }
 
-  @Patch(':id')
+  @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSizeDto): Promise<Size> {
     return this.sizesService.update(id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string): Promise<void> {
-    return this.sizesService.remove(id);
+  remove(
+    @Param('id') id: string,
+    @Query('createdBy') createdBy?: string,
+  ): Promise<void> {
+    return this.sizesService.remove(id, createdBy);
   }
 }

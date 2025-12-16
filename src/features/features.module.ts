@@ -11,6 +11,7 @@ import { SizesModule } from './sizes/sizes.module';
 import { ItemsModule } from './items/items.module';
 import { SortingJobModule } from './sorting-job/sorting-job.module';
 import { GradeModule } from './grade/grade.module';
+import { ActivityModule } from './activity/activity.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { GradeModule } from './grade/grade.module';
     ItemsModule,
     SortingJobModule,
     GradeModule,
+    ActivityModule,
   ],
 })
 export class FeaturesModule {}

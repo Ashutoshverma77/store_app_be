@@ -12,15 +12,11 @@ import { Model, Types } from 'mongoose';
 import { TransferSortingJobDto } from './dto/complete-sorting-job.dto';
 import { CreateSortingJobDto } from './dto/create-sorting-job.dto';
 import { TransferToBagDto } from './dto/transfer-to-bag.dto';
-// import { Model, Types } from 'mongoose';
-// import { SortingJob, SortingJobDocument } from './schemas/sorting-job.schema';
-// import { CreateSortingJobDto } from './dto/create-sorting-job.dto';
-// import { TransferSortingJobDto } from './dto/transfer-sorting-job.dto';
-// import { Bag, BagDocument } from '../bags/schemas/bag.schema';
-// import { Item, ItemDocument } from '../items/schemas/item.schema';
-// import { SortingJobsGateway } from './sorting-jobs.gateway';
-// import { BagsGateway } from '../bags/bags.gateway';
-// import { ItemsGateway } from '../items/items.gateway';
+import {
+  ActivityLogsService,
+  ActivityActorInput,
+} from '../activity/activity.service';
+import { AddBagToJobDto } from './dto/add-bag-to-job.dto';
 
 @Injectable()
 export class SortingJobsService {
@@ -29,11 +25,70 @@ export class SortingJobsService {
     private jobModel: Model<SortingJobDocument>,
     @InjectModel(Bag.name, 'store') private bagModel: Model<BagDocument>,
     @InjectModel(Item.name, 'store') private itemModel: Model<ItemDocument>,
-    // private readonly jobsGateway: SortingJobsGateway,
-    // private readonly bagsGateway: BagsGateway,
-    // private readonly itemsGateway: ItemsGateway,
+
+    private readonly activity: ActivityLogsService,
   ) {}
 
+  // ----------------- helpers -----------------
+  private toId(v: any): string | null {
+    if (!v) return null;
+    try {
+      return v.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  private bagSnap(b: any) {
+    if (!b) return null;
+    return {
+      id: this.toId(b._id),
+      bagCode: b.bagCode,
+      itemId: this.toId(b.itemId),
+      itemName: b.itemName,
+      itemStock: Number(b.itemStock) || 0,
+      itemUsed: Number(b.itemUsed) || 0,
+      maxQty: b.maxQty != null ? Number(b.maxQty) : null,
+      transferQty: b.transferQty != null ? Number(b.transferQty) : 0,
+      transferType: b.transferType ?? null,
+    };
+  }
+
+  private itemSnap(i: any) {
+    if (!i) return null;
+    return {
+      id: this.toId(i._id),
+      code: i.code,
+      name: i.name,
+      openingStock: Number(i.openingStock) || 0,
+      unit: i.unit ?? null,
+    };
+  }
+
+  private jobSnap(j: any) {
+    if (!j) return null;
+    return {
+      id: this.toId(j._id),
+      itemId: this.toId(j.itemId),
+      itemName: j.itemName,
+      machineName: j.machineName ?? null,
+      status: j.status,
+      totalInputQtyInBags: Number(j.totalInputQtyInBags) || 0,
+      totalInputQtyInWt: Number(j.totalInputQtyInWt) || 0,
+      totalTransferQtyInWt: Number(j.totalTransferQtyInWt) || 0,
+      inputBags:
+        (j.inputBags ?? []).map((x: any) => ({
+          bagId: this.toId(x.bagId),
+          bagCode: x.bagCode,
+          qtyInWt: Number(x.qtyInWt) || 0,
+          transferQtyInWt: Number(x.transferQtyInWt) || 0,
+        })) ?? [],
+      startedAt: j.startedAt ?? null,
+      completedAt: j.completedAt ?? null,
+    };
+  }
+
+  // ----------------- queries -----------------
   async findAll() {
     return this.jobModel.find().sort({ createdAt: -1 }).lean();
   }
@@ -44,11 +99,12 @@ export class SortingJobsService {
     return job;
   }
 
+  // ----------------- CREATE -----------------
   // CREATE JOB: subtract from bag stock and item opening stock
-  async create(dto: CreateSortingJobDto) {
+  async create(dto: CreateSortingJobDto, actor?: ActivityActorInput) {
     const itemId = new Types.ObjectId(dto.itemId);
-    const item = await this.itemModel.findById(itemId);
-    if (!item) throw new NotFoundException('Item not found');
+    const itemBefore = await this.itemModel.findById(itemId);
+    if (!itemBefore) throw new NotFoundException('Item not found');
 
     if (!dto.inputBags?.length) {
       throw new BadRequestException('inputBags required');
@@ -73,11 +129,22 @@ export class SortingJobsService {
       throw new BadRequestException('Total input qty must be > 0');
     }
 
-    if ((item.openingStock ?? 0) < totalInputQtyInWt) {
+    if ((itemBefore.openingStock ?? 0) < totalInputQtyInWt) {
       throw new BadRequestException(
-        `Item opening stock insufficient. Need ${totalInputQtyInWt}, have ${item.openingStock}`,
+        `Item opening stock insufficient. Need ${totalInputQtyInWt}, have ${itemBefore.openingStock}`,
       );
     }
+
+    const itemBeforeSnap = this.itemSnap(itemBefore);
+
+    // track per-bag before/after for activity
+    const bagChanges: Array<{
+      bagId: string;
+      bagCode: string;
+      before: any;
+      after: any;
+      qtyInWt: number;
+    }> = [];
 
     // Apply bag updates (stock - , used +)
     for (const b of dto.inputBags) {
@@ -85,31 +152,45 @@ export class SortingJobsService {
       if (qty <= 0) throw new BadRequestException('qtyInWt must be > 0');
 
       // locate bag by id primarily; fallback by code (optional)
-      const bag = b.bagId
+      const bagDoc = b.bagId
         ? await this.bagModel.findById(b.bagId)
         : await this.bagModel.findOne({ bagCode: b.bagCode });
 
-      if (!bag) throw new NotFoundException(`Bag not found: ${b.bagCode}`);
-      if (bag.itemId.toString() !== itemId.toString()) {
+      if (!bagDoc) throw new NotFoundException(`Bag not found: ${b.bagCode}`);
+      if (bagDoc.itemId.toString() !== itemId.toString()) {
         throw new BadRequestException(
-          `Bag ${bag.bagCode} does not belong to selected item`,
+          `Bag ${bagDoc.bagCode} does not belong to selected item`,
         );
       }
 
-      if ((bag.itemStock ?? 0) < qty) {
+      if ((bagDoc.itemStock ?? 0) < qty) {
         throw new BadRequestException(
-          `Bag ${bag.bagCode} has insufficient stock. Need ${qty}, have ${bag.itemStock}`,
+          `Bag ${bagDoc.bagCode} has insufficient stock. Need ${qty}, have ${bagDoc.itemStock}`,
         );
       }
 
-      bag.itemStock = (bag.itemStock ?? 0) - qty;
-      bag.itemUsed = (bag.itemUsed ?? 0) + qty;
-      await bag.save();
+      const before = this.bagSnap(bagDoc);
+
+      bagDoc.itemStock = (bagDoc.itemStock ?? 0) - qty;
+      bagDoc.itemUsed = (bagDoc.itemUsed ?? 0) + qty;
+      await bagDoc.save();
+
+      const after = this.bagSnap(bagDoc);
+
+      bagChanges.push({
+        bagId: bagDoc._id!.toString(),
+        bagCode: bagDoc.bagCode,
+        before,
+        after,
+        qtyInWt: qty,
+      });
     }
 
     // Update item opening stock
-    item.openingStock = (item.openingStock ?? 0) - totalInputQtyInWt;
-    await item.save();
+    itemBefore.openingStock =
+      (itemBefore.openingStock ?? 0) - totalInputQtyInWt;
+    await itemBefore.save();
+    const itemAfterSnap = this.itemSnap(itemBefore);
 
     // Create job
     const created = await this.jobModel.create({
@@ -128,30 +209,108 @@ export class SortingJobsService {
       totalTransferQtyInWt: 0,
     });
 
-    // broadcast updated data
-    // await this.bagsGateway.emitAllBags();
-    // await this.itemsGateway.emitAllItems();
-    // await this.jobsGateway.emitAllJobs();
+    // -------- activity log --------
+    await this.activity.log({
+      module: 'sorting_jobs',
+      action: 'create',
+      eventKey: 'sorting_jobs.create',
+      actor: dto.createdBy
+        ? { userId: dto.createdBy } // ✅ from Flutter uid
+        : actor,
+      entities: [
+        {
+          type: 'SortingJob',
+          id: created._id!.toString(),
+          label: created.itemName,
+        },
+        {
+          type: 'Item',
+          id: itemId.toString(),
+          label: itemAfterSnap?.name ?? created.itemName,
+        },
+        ...bagChanges.map((x) => ({
+          type: 'Bag',
+          id: x.bagId,
+          label: x.bagCode,
+        })),
+      ],
+      changes: {
+        before: {
+          item: itemBeforeSnap,
+          bags: bagChanges.map((x) => x.before),
+          job: null,
+        },
+        after: {
+          item: itemAfterSnap,
+          bags: bagChanges.map((x) => x.after),
+          job: this.jobSnap(created),
+        },
+        delta: {
+          itemOpeningStock: -(totalInputQtyInWt || 0),
+          totalInputQtyInBags: dto.inputBags.length,
+          totalInputQtyInWt,
+        },
+      },
+      meta: {
+        machineName: dto.machineName ?? null,
+        inputBags: dto.inputBags,
+      },
+    });
 
     return created;
   }
 
-  async start(id: string) {
-    const job = await this.jobModel.findById(id);
-    if (!job) throw new NotFoundException('Job not found');
-    if (job.status === 'completed')
+  // ----------------- START -----------------
+  async start(id: string, createdBy?: string, actor?: ActivityActorInput) {
+    const jobBefore = await this.jobModel.findById(id);
+    if (!jobBefore) throw new NotFoundException('Job not found');
+    if (jobBefore.status === 'completed')
       throw new BadRequestException('Job already completed');
 
-    job.status = 'started';
-    job.startedAt = new Date();
-    await job.save();
+    const beforeSnap = this.jobSnap(jobBefore);
 
-    // await this.jobsGateway.emitAllJobs();
-    return job;
+    jobBefore.status = 'started';
+    jobBefore.startedAt = new Date();
+    await jobBefore.save();
+
+    const afterSnap = this.jobSnap(jobBefore);
+
+    await this.activity.log({
+      module: 'sorting_jobs',
+      action: 'start',
+      eventKey: 'sorting_jobs.start',
+      actor: createdBy
+        ? { userId: createdBy } // ✅ from Flutter uid
+        : actor,
+      entities: [
+        {
+          type: 'SortingJob',
+          id: jobBefore._id!.toString(),
+          label: jobBefore.itemName,
+        },
+        {
+          type: 'Item',
+          id: jobBefore.itemId.toString(),
+          label: jobBefore.itemName,
+        },
+      ],
+      changes: {
+        before: { job: beforeSnap },
+        after: { job: afterSnap },
+        delta: { status: 'started' },
+      },
+      meta: {},
+    });
+
+    return jobBefore;
   }
 
-  // TRANSFER one-by-one for a specific input bag
-  async transferOne(id: string, dto: TransferSortingJobDto) {
+  // ----------------- TRANSFER ONE (return to same bag) -----------------
+  async transferOne(
+    id: string,
+    dto: TransferSortingJobDto,
+    actor?: ActivityActorInput,
+  ) {
     const job = await this.jobModel.findById(id);
     if (!job) throw new NotFoundException('Job not found');
     if (job.status === 'completed')
@@ -161,6 +320,8 @@ export class SortingJobsService {
     if (transferWt <= 0) {
       throw new BadRequestException('transferQtyInWt must be > 0');
     }
+
+    const jobBeforeSnap = this.jobSnap(job);
 
     const totalInputWt = Number(job.totalInputQtyInWt) || 0;
     const alreadyTransferredWt = Number(job.totalTransferQtyInWt) || 0;
@@ -177,7 +338,6 @@ export class SortingJobsService {
       );
     }
 
-    // find input bag inside job
     const idx = job.inputBags.findIndex((b) => {
       if (dto.bagId) return b.bagId?.toString() === dto.bagId;
       return b.bagCode === dto.bagCode;
@@ -200,26 +360,31 @@ export class SortingJobsService {
       );
     }
 
-    // update bag stock back + used -
+    // bag doc
     const bagDoc = inputBag.bagId
       ? await this.bagModel.findById(inputBag.bagId)
       : await this.bagModel.findOne({ bagCode: inputBag.bagCode });
 
     if (!bagDoc) throw new NotFoundException('Target bag not found');
+    const bagBeforeSnap = this.bagSnap(bagDoc);
 
-    // add stock back
-    bagDoc.itemStock = (bagDoc.itemStock ?? 0) + transferWt;
-    // reduce used back (never negative)
-    bagDoc.itemUsed = Math.max(0, (bagDoc.itemUsed ?? 0) - transferWt);
-    await bagDoc.save();
-
-    // update item opening stock back
+    // item doc
     const item = await this.itemModel.findById(job.itemId);
     if (!item) throw new NotFoundException('Item not found');
+    const itemBeforeSnap = this.itemSnap(item);
+
+    // apply bag (stock +, used -)
+    bagDoc.itemStock = (bagDoc.itemStock ?? 0) + transferWt;
+    bagDoc.itemUsed = Math.max(0, (bagDoc.itemUsed ?? 0) - transferWt);
+    await bagDoc.save();
+    const bagAfterSnap = this.bagSnap(bagDoc);
+
+    // apply item (openingStock +)
     item.openingStock = (item.openingStock ?? 0) + transferWt;
     await item.save();
+    const itemAfterSnap = this.itemSnap(item);
 
-    // update job input bag transfer and total transfer
+    // apply job (per-bag transfer and total)
     inputBag.transferQtyInWt =
       (Number(inputBag.transferQtyInWt) || 0) + transferWt;
     job.totalTransferQtyInWt = alreadyTransferredWt + transferWt;
@@ -229,24 +394,61 @@ export class SortingJobsService {
       job.status = 'completed';
       job.completedAt = new Date();
     } else {
-      // keep started if it was created earlier
       if (job.status === 'created') job.status = 'started';
     }
 
     await job.save();
+    const jobAfterSnap = this.jobSnap(job);
 
-    // await this.bagsGateway.emitAllBags();
-    // await this.itemsGateway.emitAllItems();
-    // await this.jobsGateway.emitAllJobs();
+    // activity
+    await this.activity.log({
+      module: 'sorting_jobs',
+      action: 'transfer',
+      eventKey: 'sorting_jobs.transfer_one',
+      actor: dto.createdBy
+        ? { userId: dto.createdBy } // ✅ from Flutter uid
+        : actor,
+      entities: [
+        { type: 'SortingJob', id: job._id!.toString(), label: job.itemName },
+        { type: 'Bag', id: bagDoc._id!.toString(), label: bagDoc.bagCode },
+        { type: 'Item', id: job.itemId.toString(), label: job.itemName },
+      ],
+      changes: {
+        before: {
+          job: jobBeforeSnap,
+          bag: bagBeforeSnap,
+          item: itemBeforeSnap,
+        },
+        after: { job: jobAfterSnap, bag: bagAfterSnap, item: itemAfterSnap },
+        delta: {
+          transferQtyInWt: transferWt,
+          jobTotalTransferQtyInWt: transferWt,
+          itemOpeningStock: transferWt,
+          bagItemStock: transferWt,
+          bagItemUsed: -transferWt,
+        },
+      },
+      meta: {
+        bagCode: inputBag.bagCode,
+        bagId: inputBag.bagId ? inputBag.bagId.toString() : null,
+      },
+    });
 
     return job;
   }
 
-  async transferToAnotherBag(jobId: string, dto: TransferToBagDto) {
+  // ----------------- TRANSFER TO ANOTHER BAG -----------------
+  async transferToAnotherBag(
+    jobId: string,
+    dto: TransferToBagDto,
+    actor?: ActivityActorInput,
+  ) {
     const job = await this.jobModel.findById(jobId);
     if (!job) throw new NotFoundException('Job not found');
     if (job.status === 'completed')
       throw new BadRequestException('Job already completed');
+
+    const jobBeforeSnap = this.jobSnap(job);
 
     const sourceBagId = new Types.ObjectId(dto.sourceBagId);
     const targetBagId = new Types.ObjectId(dto.targetBagId);
@@ -296,20 +498,21 @@ export class SortingJobsService {
       );
     }
 
-    // Load bags
+    // Load target bag
     const targetBag = await this.bagModel.findById(targetBagId);
     if (!targetBag) throw new NotFoundException('Target bag not found');
+    const targetBeforeSnap = this.bagSnap(targetBag);
 
-    // Must be same itemId as job
     if (targetBag.itemId.toString() !== job.itemId.toString()) {
       throw new BadRequestException('Target bag itemId mismatch');
     }
 
     const maxQty = Number(targetBag.maxQty) || 0;
-    if (maxQty <= 0)
+    if (maxQty <= 0) {
       throw new BadRequestException(
         `Target bag maxQty not set for ${targetBag.bagCode}`,
       );
+    }
 
     const targetCurrent = Number(targetBag.itemStock) || 0;
     if (targetCurrent + qty > maxQty) {
@@ -318,12 +521,10 @@ export class SortingJobsService {
       );
     }
 
-    // We will update:
-    // 1) targetBag.itemStock += qty  (guarded by maxQty)
-    // 2) item.openingStock += qty
-    // 3) job.inputBags[source].transferQtyInWt += qty AND job.totalTransferQtyInWt += qty
-    // 4) if fully transferred => status completed
-    //
+    const itemBefore = await this.itemModel.findById(job.itemId);
+    if (!itemBefore) throw new NotFoundException('Item not found');
+    const itemBeforeSnap = this.itemSnap(itemBefore);
+
     // rollback best-effort
     const rollback = {
       incTargetBag: false,
@@ -332,7 +533,7 @@ export class SortingJobsService {
     };
 
     try {
-      // 1) increment target bag with maxQty guard (atomic condition)
+      // 1) increment target bag with maxQty guard
       const bagRes = await this.bagModel.updateOne(
         { _id: targetBagId, itemStock: { $lte: maxQty - qty } },
         { $inc: { itemStock: qty } },
@@ -388,6 +589,62 @@ export class SortingJobsService {
         await updatedJob.save();
       }
 
+      const targetAfter = await this.bagModel.findById(targetBagId).lean();
+      const itemAfter = await this.itemModel.findById(job.itemId).lean();
+
+      await this.activity.log({
+        module: 'sorting_jobs',
+        action: 'transfer',
+        eventKey: 'sorting_jobs.transfer_to_bag',
+        actor: dto.createdBy
+          ? { userId: dto.createdBy } // ✅ from Flutter uid
+          : actor,
+        entities: [
+          {
+            type: 'SortingJob',
+            id: updatedJob._id!.toString(),
+            label: updatedJob.itemName,
+          },
+          {
+            type: 'Bag',
+            id: targetBagId.toString(),
+            label: targetBeforeSnap?.bagCode ?? 'target',
+          },
+          {
+            type: 'Bag',
+            id: sourceBagId.toString(),
+            label: inputRow.bagCode ?? 'source',
+          },
+          {
+            type: 'Item',
+            id: updatedJob.itemId.toString(),
+            label: updatedJob.itemName,
+          },
+        ],
+        changes: {
+          before: {
+            job: jobBeforeSnap,
+            item: itemBeforeSnap,
+            targetBag: targetBeforeSnap,
+          },
+          after: {
+            job: this.jobSnap(updatedJob),
+            item: this.itemSnap(itemAfter),
+            targetBag: this.bagSnap(targetAfter),
+          },
+          delta: {
+            transferQtyInWt: qty,
+            jobTotalTransferQtyInWt: qty,
+            itemOpeningStock: qty,
+            targetBagItemStock: qty,
+          },
+        },
+        meta: {
+          sourceBagId: sourceBagId.toString(),
+          targetBagId: targetBagId.toString(),
+        },
+      });
+
       return {
         status: true,
         msg: 'Transferred to target bag successfully',
@@ -422,6 +679,174 @@ export class SortingJobsService {
         }
       } catch (_) {}
 
+      throw e;
+    }
+  }
+
+  // inside SortingJobsService
+  async findStartedJobsByItem(itemId: string) {
+    const oid = new Types.ObjectId(itemId);
+    return this.jobModel
+      .find({ itemId: oid, status: { $in: ['started', 'restarted'] } })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+  /**
+   * Adds ONE bag into an already started job:
+   * - job must be started
+   * - bag.itemId must match job.itemId
+   * - bag must NOT already exist in job.inputBags
+   * - qtyInWt <= bag.itemStock
+   * Then:
+   * - bag.itemStock -= qtyInWt, bag.itemUsed += qtyInWt
+   * - item.openingStock -= qtyInWt
+   * - job.inputBags.push({bagId, bagCode, qtyInWt, transferQtyInWt:0})
+   * - job.totalInputQtyInBags += 1
+   * - job.totalInputQtyInWt += qtyInWt
+   */
+  async addBagToJob(jobId: string, dto: AddBagToJobDto, userId?: string) {
+    const job = await this.jobModel.findById(jobId);
+    if (!job) throw new NotFoundException('Job not found');
+    if (job.status === 'completed')
+      throw new BadRequestException('Job already completed');
+
+    // You said: only allow if started
+    if (job.status !== 'started' && job.status !== 'restarted') {
+      throw new BadRequestException('Job is not started');
+    }
+
+    const bagObjectId = new Types.ObjectId(dto.bagId);
+    const qty = Number(dto.qtyInWt) || 0;
+    if (qty <= 0) throw new BadRequestException('qtyInWt must be > 0');
+
+    // ✅ Ensure bag not already present in job
+    const already = (job.inputBags || []).some(
+      (b: any) => b?.bagId?.toString() === dto.bagId,
+    );
+    if (already) {
+      throw new BadRequestException('This bag is already added in this job');
+    }
+
+    const bag = await this.bagModel.findById(bagObjectId);
+    if (!bag) throw new NotFoundException('Bag not found');
+
+    if (bag.itemId.toString() !== job.itemId.toString()) {
+      throw new BadRequestException('Bag itemId mismatch with job itemId');
+    }
+
+    if ((bag.itemStock ?? 0) < qty) {
+      throw new BadRequestException(
+        `Bag ${bag.bagCode} has insufficient stock. Need ${qty}, have ${bag.itemStock}`,
+      );
+    }
+
+    const item = await this.itemModel.findById(job.itemId);
+    if (!item) throw new NotFoundException('Item not found');
+
+    if ((item.openingStock ?? 0) < qty) {
+      throw new BadRequestException(
+        `Item openingStock insufficient. Need ${qty}, have ${item.openingStock}`,
+      );
+    }
+
+    // ---- best-effort rollback (no Mongo transactions) ----
+    const rollback = {
+      bagUpdated: false,
+      itemUpdated: false,
+      jobUpdated: false,
+    };
+
+    try {
+      // 1) bag: stock -= qty, used += qty  (atomic condition)
+      const bagRes = await this.bagModel.updateOne(
+        { _id: bagObjectId, itemStock: { $gte: qty } },
+        { $inc: { itemStock: -qty, itemUsed: qty } },
+      );
+      if (bagRes.modifiedCount !== 1) {
+        throw new BadRequestException('Failed to update bag stock');
+      }
+      rollback.bagUpdated = true;
+
+      // 2) item: openingStock -= qty (atomic condition)
+      const itemRes = await this.itemModel.updateOne(
+        { _id: job.itemId, openingStock: { $gte: qty } },
+        { $inc: { openingStock: -qty } },
+      );
+      if (itemRes.modifiedCount !== 1) {
+        throw new BadRequestException('Failed to update item openingStock');
+      }
+      rollback.itemUpdated = true;
+
+      // 3) job: push new inputBags row + update totals
+      // extra guard: do not push if already exists (race)
+      const jobRes = await this.jobModel.updateOne(
+        { _id: job._id, 'inputBags.bagId': { $ne: bagObjectId } },
+        {
+          $push: {
+            inputBags: {
+              bagId: bagObjectId,
+              bagCode: bag.bagCode,
+              qtyInWt: qty,
+              transferQtyInWt: 0,
+            },
+          },
+          $inc: {
+            totalInputQtyInBags: 1,
+            totalInputQtyInWt: qty,
+          },
+        },
+      );
+
+      if (jobRes.modifiedCount !== 1) {
+        throw new BadRequestException(
+          'Failed to add bag into job (maybe already exists)',
+        );
+      }
+      rollback.jobUpdated = true;
+
+      const updatedJob = await this.jobModel.findById(job._id).lean();
+
+      // ✅ Activity log (pseudo)
+      await this.activity.log({
+        module: 'sorting_jobs',
+        action: 'transferqr',
+        eventKey: 'sorting_job.add_bag',
+        actor: userId ? { userId } : {},
+        entities: [
+          { type: 'SortingJob', id: jobId, label: job.itemName },
+          { type: 'Bag', id: dto.bagId, label: bag.bagCode },
+          { type: 'Item', id: job.itemId.toString(), label: job.itemName },
+        ],
+        // changes: { qtyInWt: qty },
+        meta: { bagCode: bag.bagCode },
+      });
+
+      return { status: true, msg: 'Bag added to job', data: updatedJob };
+    } catch (e) {
+      // rollback best effort
+      try {
+        if (rollback.jobUpdated) {
+          await this.jobModel.updateOne(
+            { _id: job._id },
+            {
+              $pull: { inputBags: { bagId: bagObjectId } },
+              $inc: { totalInputQtyInBags: -1, totalInputQtyInWt: -qty },
+            },
+          );
+        }
+        if (rollback.itemUpdated) {
+          await this.itemModel.updateOne(
+            { _id: job.itemId },
+            { $inc: { openingStock: qty } },
+          );
+        }
+        if (rollback.bagUpdated) {
+          await this.bagModel.updateOne(
+            { _id: bagObjectId },
+            { $inc: { itemStock: qty, itemUsed: -qty } },
+          );
+        }
+      } catch (_) {}
       throw e;
     }
   }

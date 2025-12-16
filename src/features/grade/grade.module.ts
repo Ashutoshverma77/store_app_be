@@ -6,6 +6,7 @@ import { GradeController } from './grade.controller';
 import { GradeService } from './grade.service';
 import { GradeGateway } from './grade.gateway';
 import { Grade, GradeSchema } from './entities/grade.schema';
+import { ActivityModule } from '../activity/activity.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { Grade, GradeSchema } from './entities/grade.schema';
       [{ name: Grade.name, schema: GradeSchema }],
       'store',
     ),
+    ActivityModule,
   ],
   controllers: [GradeController],
   providers: [GradeService, GradeGateway],

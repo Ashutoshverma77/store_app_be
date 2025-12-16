@@ -1,5 +1,13 @@
 // src/sorting-jobs/dto/transfer-to-bag.dto.ts
-import { IsBoolean, IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsMongoId,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class TransferToBagDto {
   // which input bag row are you transferring from?
@@ -13,4 +21,7 @@ export class TransferToBagDto {
   @IsNumber()
   @Min(0.000001)
   transferQtyInWt: number;
+
+  @IsOptional()
+  createdBy?: string;
 }

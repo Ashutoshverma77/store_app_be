@@ -1,5 +1,5 @@
 // src/sizes/dto/create-size.dto.ts
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateSizeDto {
   @IsNotEmpty()
@@ -9,4 +9,7 @@ export class CreateSizeDto {
   @IsNotEmpty()
   @IsString()
   name: string;
+
+  @IsOptional()
+  createdBy?: string;
 }

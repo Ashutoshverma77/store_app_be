@@ -7,6 +7,8 @@ import {
   Patch,
   Param,
   Delete,
+  Put,
+  Query,
 } from '@nestjs/common';
 import { ItemsService } from './items.service';
 import { CreateItemDto } from './dto/create-item.dto';
@@ -32,13 +34,16 @@ export class ItemsController {
     return this.itemsService.findOne(id);
   }
 
-  @Patch(':id')
+  @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateItemDto): Promise<Item> {
     return this.itemsService.update(id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string): Promise<void> {
-    return this.itemsService.remove(id);
+  remove(
+    @Param('id') id: string,
+    @Query('createdBy') createdBy?: string,
+  ): Promise<void> {
+    return this.itemsService.remove(id, createdBy);
   }
 }

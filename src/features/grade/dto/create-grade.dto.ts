@@ -10,7 +10,10 @@ export class CreateGradeDto {
   @IsString()
   name: string;
 
-//   @IsOptional()
-//   @IsBoolean()
-//   isActive?: boolean;
+  @IsOptional()
+  createdBy?: string;
+
+  //   @IsOptional()
+  //   @IsBoolean()
+  //   isActive?: boolean;
 }

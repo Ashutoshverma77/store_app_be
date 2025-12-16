@@ -7,6 +7,7 @@ import {
   Param,
   Put,
   Delete,
+  Query,
 } from '@nestjs/common';
 
 import { GradeService } from './grade.service';
@@ -64,8 +65,8 @@ export class GradeController {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
-    const result = await this.gradeService.remove(id);
+  async remove(@Param('id') id: string, @Query('createdBy') createdBy?: string) {
+    const result = await this.gradeService.remove(id,createdBy);
     await this.gradeGateway.broadcastGrades();
     return {
       status: true,

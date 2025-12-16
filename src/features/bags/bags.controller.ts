@@ -8,6 +8,7 @@ import {
   Param,
   Delete,
   Put,
+  Query,
 } from '@nestjs/common';
 import { BagsService } from './bags.service';
 import { CreateBagDto } from './dto/create-bag.dto';
@@ -45,7 +46,7 @@ export class BagsController {
     return { status: true, msg: 'Transferred successfully', data };
   }
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.bagsService.remove(id);
+  remove(@Param('id') id: string, @Query('createdBy') createdBy?: string) {
+    return this.bagsService.remove(id,createdBy);
   }
 }
