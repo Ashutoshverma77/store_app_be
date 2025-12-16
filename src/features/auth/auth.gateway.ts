@@ -25,8 +25,9 @@ export class AuthGateway {
   }
 
   async broadcastAuthList() {
-    const list = await this.auth.findAllUsers();
-    this.server.emit('auth:findAll', list); // broadcast to all clients
+    var body = { page: 1, limit: 12, sort: '-createdAt', q: '', field: 'all' };
+    var authUserList = await this.auth.findUserPaged(body);
+    this.server.emit('auth:listUsersPaged', authUserList);
   }
 
   @SubscribeMessage('auth:connection')

@@ -18,7 +18,7 @@ export class StorePlaceGateway {
       search: '',
       sort: '-createdAt',
     });
-    this.server.emit('store:findAllStorePlace', list); // broadcast to all clients
+    this.server.emit('store:findAllStorePlacePage', list); // broadcast to all clients
   }
 
   @SubscribeMessage('store:findAllStorePlace')
@@ -30,7 +30,7 @@ export class StorePlaceGateway {
   }
 
   // gateway
-  @SubscribeMessage('store:findAllStorePlace')
+  @SubscribeMessage('store:findAllStorePlacePage')
   async findAllPaged(client: any, payload: any) {
     const page = Number(payload?.page ?? 1);
     const limit = Number(payload?.limit ?? 12);
@@ -43,7 +43,7 @@ export class StorePlaceGateway {
       search,
       sort,
     });
-    client.emit('store:findAllStorePlace', result);
+    client.emit('store:findAllStorePlacePage', result);
   }
 
   @SubscribeMessage('store:findOneStorePlace')

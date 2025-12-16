@@ -32,7 +32,7 @@ export class StoreItemController {
   @Post('items')
   async create(@Body() createStoreItemDto: CreateStoreItemDto) {
     var data = await this.storeItemService.create(createStoreItemDto);
-    console.log(data);
+    // console.log(data);
     this.gateway.broadcastStoreItems().catch(() => {});
     return data;
   }
@@ -80,6 +80,7 @@ export class StoreItemController {
       dto.base64,
       'store-items',
     );
+    this.gateway.broadcastStoreItems().catch(() => {});
     return { success: true, imageUrl, entity };
   }
 }

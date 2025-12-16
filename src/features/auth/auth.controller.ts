@@ -99,6 +99,7 @@ export class AuthController {
       dto.base64,
       'store-user',
     );
+    // this.gateway.broadcastAuthList().catch(() => {});
     return { success: true, imageUrl, entity };
   }
 
