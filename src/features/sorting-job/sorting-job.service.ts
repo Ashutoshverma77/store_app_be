@@ -17,6 +17,7 @@ import {
   ActivityActorInput,
 } from '../activity/activity.service';
 import { AddBagToJobDto } from './dto/add-bag-to-job.dto';
+import { TransferToBagTwoDto } from './dto/transfer-to-bag-two.dto';
 
 @Injectable()
 export class SortingJobsService {
@@ -671,6 +672,288 @@ export class SortingJobsService {
             { $inc: { openingStock: -qty } },
           );
         }
+        if (rollback.incTargetBag) {
+          await this.bagModel.updateOne(
+            { _id: targetBagId },
+            { $inc: { itemStock: -qty } },
+          );
+        }
+      } catch (_) {}
+
+      throw e;
+    }
+  }
+
+  async transferToAnotherBagTwo(
+    jobId: string,
+    dto: TransferToBagTwoDto,
+    actor?: ActivityActorInput,
+  ) {
+    const job = await this.jobModel.findById(jobId);
+    if (!job) throw new NotFoundException('Job not found');
+    if (job.status === 'completed') {
+      throw new BadRequestException('Job already completed');
+    }
+
+    const jobBeforeSnap = this.jobSnap(job);
+
+    const targetBagId = new Types.ObjectId(dto.targetBagId);
+
+    const qty = Number(dto.transferQtyInWt) || 0;
+    if (qty <= 0) throw new BadRequestException('transferQtyInWt must be > 0');
+
+    // ---- Validate target bag ----
+    const targetBag = await this.bagModel.findById(targetBagId);
+    if (!targetBag) throw new NotFoundException('Target bag not found');
+    const targetBeforeSnap = this.bagSnap(targetBag);
+
+    // 1) itemId must match
+    if (targetBag.itemId.toString() !== job.itemId.toString()) {
+      throw new BadRequestException('Target bag itemId mismatch');
+    }
+
+    // 2) maxQty guard
+    const maxQty = Number(targetBag.maxQty) || 0;
+    if (maxQty <= 0) {
+      throw new BadRequestException(
+        `Target bag maxQty not set for ${targetBag.bagCode}`,
+      );
+    }
+
+    const targetCurrent = Number(targetBag.itemStock) || 0;
+    const targetCapacityRemaining = maxQty - targetCurrent;
+    if (targetCapacityRemaining < 0) {
+      throw new BadRequestException(
+        'Target bag data corrupted: stock > maxQty',
+      );
+    }
+    if (qty > targetCapacityRemaining) {
+      throw new BadRequestException(
+        `Target bag exceeds maxQty. CapacityRemaining=${targetCapacityRemaining}, requested=${qty}`,
+      );
+    }
+
+    // ---- Validate job remaining overall ----
+    const inputWtTotal = Number(job.totalInputQtyInWt) || 0;
+    const alreadyTransferredWt = Number(job.totalTransferQtyInWt) || 0;
+    const remainingOverall = inputWtTotal - alreadyTransferredWt;
+
+    if (remainingOverall < 0) {
+      throw new BadRequestException('Job data corrupted: transferred > input');
+    }
+    if (qty > remainingOverall) {
+      throw new BadRequestException(
+        `Transfer exceeds remaining overall wt. Remaining=${remainingOverall}, requested=${qty}`,
+      );
+    }
+
+    // ---- Auto-allocate transfer qty across inputBags ----
+    // We take from job.inputBags in order and consume each bag's remaining.
+    const allocations: Array<{
+      bagId: Types.ObjectId;
+      bagCode: string;
+      qty: number;
+    }> = [];
+
+    let toAllocate = qty;
+    const inputBags = job.inputBags || [];
+
+    for (const row of inputBags as any[]) {
+      if (toAllocate <= 0) break;
+
+      const rowQty = Number(row.qtyInWt) || 0;
+      const rowTransferred = Number(row.transferQtyInWt) || 0;
+      const rowRemaining = rowQty - rowTransferred;
+
+      if (rowRemaining <= 0) continue;
+
+      const take = Math.min(rowRemaining, toAllocate);
+
+      if (!row.bagId) {
+        // You said bagId is present in job inputBags. If not, you cannot update row safely.
+        throw new BadRequestException(
+          'Job inputBags contains row without bagId',
+        );
+      }
+
+      allocations.push({
+        bagId: new Types.ObjectId(row.bagId),
+        bagCode: row.bagCode,
+        qty: take,
+      });
+
+      toAllocate -= take;
+    }
+
+    if (toAllocate > 0) {
+      // Should never happen because we already checked remainingOverall, but keep hard guard.
+      throw new BadRequestException(
+        `Unable to allocate full qty across input bags. Unallocated=${toAllocate}`,
+      );
+    }
+
+    const itemBefore = await this.itemModel.findById(job.itemId);
+    if (!itemBefore) throw new NotFoundException('Item not found');
+    const itemBeforeSnap = this.itemSnap(itemBefore);
+
+    // Rollback flags
+    const rollback = {
+      incTargetBag: false,
+      incItem: false,
+      jobIncs: [] as Array<{ bagId: Types.ObjectId; qty: number }>,
+      incJobTotal: false,
+    };
+
+    try {
+      // 1) increment target bag with maxQty guard (atomic condition)
+      const bagRes = await this.bagModel.updateOne(
+        { _id: targetBagId, itemStock: { $lte: maxQty - qty } },
+        { $inc: { itemStock: qty }, $set: { transferType: 'inStock' } },
+      );
+      if (bagRes.modifiedCount !== 1) {
+        throw new BadRequestException(
+          'Failed to update target bag (maxQty condition failed)',
+        );
+      }
+      rollback.incTargetBag = true;
+
+      // 2) increment item openingStock
+      const itemRes = await this.itemModel.updateOne(
+        { _id: job.itemId },
+        { $inc: { openingStock: qty } },
+      );
+      if (itemRes.modifiedCount !== 1) {
+        throw new BadRequestException('Failed to update item openingStock');
+      }
+      rollback.incItem = true;
+
+      // 3) increment job totals
+      const jobTotalRes = await this.jobModel.updateOne(
+        { _id: job._id, status: { $ne: 'completed' } },
+        { $inc: { totalTransferQtyInWt: qty } },
+      );
+      if (jobTotalRes.modifiedCount !== 1) {
+        throw new BadRequestException(
+          'Failed to update job totalTransferQtyInWt',
+        );
+      }
+      rollback.incJobTotal = true;
+
+      // 4) increment per-inputBag transferQtyInWt for each allocation
+      for (const a of allocations) {
+        const r = await this.jobModel.updateOne(
+          { _id: job._id },
+          { $inc: { 'inputBags.$[src].transferQtyInWt': a.qty } },
+          { arrayFilters: [{ 'src.bagId': a.bagId }] },
+        );
+        if (r.modifiedCount !== 1) {
+          throw new BadRequestException(
+            `Failed to update job inputBags transfer for bag ${a.bagCode}`,
+          );
+        }
+        rollback.jobIncs.push({ bagId: a.bagId, qty: a.qty });
+      }
+
+      // reload job to decide completion
+      const updatedJob = await this.jobModel.findById(job._id);
+      if (!updatedJob)
+        throw new NotFoundException('Job not found after update');
+
+      const newTotalTransferred = Number(updatedJob.totalTransferQtyInWt) || 0;
+      const newRemainingOverall =
+        (Number(updatedJob.totalInputQtyInWt) || 0) - newTotalTransferred;
+
+      if (newRemainingOverall <= 0) {
+        updatedJob.status = 'completed';
+        updatedJob.completedAt = new Date();
+        await updatedJob.save();
+      } else {
+        if (updatedJob.status === 'created') updatedJob.status = 'started';
+        await updatedJob.save();
+      }
+
+      const targetAfter = await this.bagModel.findById(targetBagId).lean();
+      const itemAfter = await this.itemModel.findById(job.itemId).lean();
+
+      await this.activity.log({
+        module: 'sorting_jobs',
+        action: 'transfer',
+        eventKey: 'sorting_jobs.transfer_to_bag_auto_source',
+        actor: dto.createdBy ? { userId: dto.createdBy } : actor,
+        entities: [
+          {
+            type: 'SortingJob',
+            id: updatedJob._id!.toString(),
+            label: updatedJob.itemName,
+          },
+          {
+            type: 'Bag',
+            id: targetBagId.toString(),
+            label: targetBeforeSnap?.bagCode ?? 'target',
+          },
+          {
+            type: 'Item',
+            id: updatedJob.itemId.toString(),
+            label: updatedJob.itemName,
+          },
+        ],
+        changes: {
+          before: {
+            job: jobBeforeSnap,
+            item: itemBeforeSnap,
+            targetBag: targetBeforeSnap,
+          },
+          after: {
+            job: this.jobSnap(updatedJob),
+            item: this.itemSnap(itemAfter),
+            targetBag: this.bagSnap(targetAfter),
+          },
+          delta: {
+            transferQtyInWt: qty,
+            itemOpeningStock: qty,
+            targetBagItemStock: qty,
+            allocations, // ✅ shows which input bags consumed how much
+          },
+        },
+        meta: {
+          targetBagId: targetBagId.toString(),
+        },
+      });
+
+      return {
+        status: true,
+        msg: 'Transferred to target bag successfully',
+        data: updatedJob,
+      };
+    } catch (e) {
+      // rollback best effort
+      try {
+        // rollback per-row increments
+        for (const x of rollback.jobIncs) {
+          await this.jobModel.updateOne(
+            { _id: job._id },
+            { $inc: { 'inputBags.$[src].transferQtyInWt': -x.qty } },
+            { arrayFilters: [{ 'src.bagId': x.bagId }] },
+          );
+        }
+
+        // rollback job total
+        if (rollback.incJobTotal) {
+          await this.jobModel.updateOne(
+            { _id: job._id },
+            { $inc: { totalTransferQtyInWt: -qty } },
+          );
+        }
+
+        // rollback item
+        if (rollback.incItem) {
+          await this.itemModel.updateOne(
+            { _id: job.itemId },
+            { $inc: { openingStock: -qty } },
+          );
+        }
+
+        // rollback target bag
         if (rollback.incTargetBag) {
           await this.bagModel.updateOne(
             { _id: targetBagId },

@@ -15,6 +15,7 @@ import { CreateSortingJobDto } from './dto/create-sorting-job.dto';
 import { SortingJobsService } from './sorting-job.service';
 import { TransferToBagDto } from './dto/transfer-to-bag.dto';
 import { AddBagToJobDto } from './dto/add-bag-to-job.dto';
+import { TransferToBagTwoDto } from './dto/transfer-to-bag-two.dto';
 
 @Controller('sorting-jobs')
 export class SortingJobsController {
@@ -49,6 +50,11 @@ export class SortingJobsController {
   @Put(':id/transfer-to-bag')
   transferToBag(@Param('id') id: string, @Body() dto: TransferToBagDto) {
     return this.service.transferToAnotherBag(id, dto);
+  }
+
+  @Put(':id/transfer-to-bag-two')
+  transferToBagTwo(@Param('id') id: string, @Body() dto: TransferToBagTwoDto) {
+    return this.service.transferToAnotherBagTwo(id, dto);
   }
 
   @Get('started/by-item/:itemId')
