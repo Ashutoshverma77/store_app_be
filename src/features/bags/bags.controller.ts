@@ -15,6 +15,7 @@ import { CreateBagDto } from './dto/create-bag.dto';
 import { UpdateBagDto } from './dto/update-bag.dto';
 import { Bag } from './entities/bag.schema';
 import { TransferBagDto } from './dto/transfer-bag.dto';
+import { AddBagStockDto } from './dto/add-bag-stock.dto';
 
 @Controller('/api/bags')
 export class BagsController {
@@ -39,6 +40,11 @@ export class BagsController {
   async update(@Param('id') id: string, @Body() updateBagDto: UpdateBagDto) {
     return await this.bagsService.update(id, updateBagDto);
   }
+  
+  @Put(':id/add-stock')
+  addStock(@Param('id') id: string, @Body() dto: AddBagStockDto) {
+    return this.bagsService.addStock(id, dto);
+  }
 
   @Put(':id/transfer-to-bag')
   async transferToBag(@Body() dto: TransferBagDto) {
@@ -47,6 +53,6 @@ export class BagsController {
   }
   @Delete(':id')
   remove(@Param('id') id: string, @Query('createdBy') createdBy?: string) {
-    return this.bagsService.remove(id,createdBy);
+    return this.bagsService.remove(id, createdBy);
   }
 }

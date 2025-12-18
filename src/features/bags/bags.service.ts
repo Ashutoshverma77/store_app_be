@@ -14,6 +14,7 @@ import {
   ActivityLogsService,
   ActivityActorInput,
 } from '../activity/activity.service';
+import { AddBagStockDto } from './dto/add-bag-stock.dto';
 @Injectable()
 export class BagsService {
   constructor(
@@ -54,42 +55,40 @@ export class BagsService {
   }
 
   async create(dto: CreateBagDto, actor?: ActivityActorInput) {
-    if (dto.maxQty != null && dto.itemStock > dto.maxQty) {
-      throw new BadRequestException(
-        `itemStock cannot exceed maxQty (${dto.maxQty})`,
-      );
+    const maxQty = Number(dto.maxQty) || 0;
+    if (maxQty <= 0) {
+      throw new BadRequestException('maxQty must be > 0');
     }
 
-    const itemBefore = await this.itemModel.findById(dto.itemId).lean();
+    // ✅ force create rules
+    const payload: any = {
+      bagCode: dto.bagCode,
+      maxQty,
+      itemStock: 0,
+      itemUsed: 0,
+      approvedStatus: 'pending',
+      transferQty: 0,
+      transferType: 'inStock',
+      itemId: '',
+      itemName: '',
+    };
 
-    const bag = await this.bagModel.create(dto);
+    const bag = await this.bagModel.create(payload);
 
-    // ✅ Increase item openingStock by bag stock
-    await this.itemModel.findByIdAndUpdate(dto.itemId, {
-      $inc: { openingStock: dto.itemStock },
-    });
-
-    const itemAfter = await this.itemModel.findById(dto.itemId).lean();
+    // ✅ DO NOT touch item openingStock because no item is linked + stock is 0
 
     await this.activity.log({
       module: 'bags',
       action: 'create',
       eventKey: 'bags.create',
-      actor: dto.createdBy
-        ? { userId: dto.createdBy } // ✅ from Flutter uid
-        : actor,
-      entities: [
-        { type: 'Bag', id: bag._id!.toString(), label: bag.bagCode },
-        { type: 'Item', id: String(dto.itemId), label: dto.itemName ?? '' },
-      ],
+      actor: dto.createdBy ? { userId: dto.createdBy } : actor,
+      entities: [{ type: 'Bag', id: bag._id!.toString(), label: bag.bagCode }],
       changes: {
-        before: { item: this.itemSnap(itemBefore) },
-        after: { bag: this.bagSnap(bag), item: this.itemSnap(itemAfter) },
-        delta: {
-          itemOpeningStock: Number(dto.itemStock) || 0,
-        },
+        before: {},
+        after: { bag: this.bagSnap(bag) },
+        delta: { itemOpeningStock: 0, bagStock: 0 },
       },
-      meta: { dto },
+      meta: { dto: { bagCode: dto.bagCode, maxQty } },
     });
 
     return { status: true, msg: 'Bag created', data: bag };
@@ -109,101 +108,157 @@ export class BagsService {
 
     const oldSnap = this.bagSnap(old);
 
-    const oldItemId = old.itemId;
-    const newItemId = (dto.itemId ?? oldItemId) as any;
-
     const oldStock = Number(old.itemStock) || 0;
     const newStock =
       dto.itemStock == null ? oldStock : Number(dto.itemStock) || 0;
 
-    if (dto.maxQty != null && newStock > dto.maxQty) {
+    // maxQty guard
+    const maxQty =
+      dto.maxQty == null ? Number(old.maxQty) || 0 : Number(dto.maxQty) || 0;
+    if (maxQty <= 0) throw new BadRequestException('maxQty must be > 0');
+    if (newStock > maxQty) {
       throw new BadRequestException(
-        `itemStock cannot exceed maxQty (${dto.maxQty})`,
+        `itemStock cannot exceed maxQty (${maxQty})`,
       );
     }
 
-    const itemOldBefore = await this.itemModel.findById(oldItemId).lean();
-    const itemNewBefore =
-      String(oldItemId) === String(newItemId)
-        ? null
-        : await this.itemModel.findById(newItemId).lean();
+    // ✅ rule: item change only allowed when stock == 0
+    const oldItemId = old.itemId ? String(old.itemId) : '';
+    const dtoItemId = dto.itemId == null ? undefined : String(dto.itemId);
+    const newItemId = dtoItemId ?? oldItemId; // if not provided, keep
 
-    const updated = await this.bagModel.findByIdAndUpdate(id, dto, {
-      new: true,
-    });
+    const isItemChanging = dtoItemId != null && dtoItemId !== oldItemId;
+
+    if (isItemChanging && oldStock > 0) {
+      throw new BadRequestException('Cannot change item when bag stock > 0');
+    }
+
+    // if itemId is being set/changed, also set itemName if provided
+    const updated = await this.bagModel.findByIdAndUpdate(
+      id,
+      {
+        ...dto,
+        maxQty,
+        // if user passes empty, normalize
+        ...(dtoItemId ? { itemId: dtoItemId } : {}),
+      },
+      { new: true },
+    );
 
     if (!updated) throw new NotFoundException('Bag not found after update');
 
-    // ✅ stock delta logic for item openingStock
-    if (String(oldItemId) === String(newItemId)) {
+    // ✅ openingStock delta logic only when itemId exists
+    // Case A: no item attached => do nothing
+    // Case B: item attached and stock changed => openingStock += (newStock - oldStock)
+    const finalItemId = updated.itemId ? String(updated.itemId) : '';
+
+    let itemAfterSnap: any = null;
+    let itemBeforeSnap: any = null;
+
+    if (finalItemId) {
       const delta = newStock - oldStock;
       if (delta !== 0) {
-        await this.itemModel.findByIdAndUpdate(oldItemId, {
+        const itemBefore = await this.itemModel.findById(finalItemId).lean();
+        await this.itemModel.findByIdAndUpdate(finalItemId, {
           $inc: { openingStock: delta },
         });
+        const itemAfter = await this.itemModel.findById(finalItemId).lean();
+        itemBeforeSnap = this.itemSnap(itemBefore);
+        itemAfterSnap = this.itemSnap(itemAfter);
       }
-    } else {
-      await this.itemModel.findByIdAndUpdate(oldItemId, {
-        $inc: { openingStock: -oldStock },
-      });
-      await this.itemModel.findByIdAndUpdate(newItemId, {
-        $inc: { openingStock: newStock },
-      });
     }
-
-    const itemOldAfter = await this.itemModel.findById(oldItemId).lean();
-    const itemNewAfter =
-      String(oldItemId) === String(newItemId)
-        ? null
-        : await this.itemModel.findById(newItemId).lean();
 
     await this.activity.log({
       module: 'bags',
       action: 'update',
       eventKey: 'bags.update',
-      actor: dto.createdBy
-        ? { userId: dto.createdBy } // ✅ from Flutter uid
+      actor: (dto as any).createdBy
+        ? { userId: (dto as any).createdBy }
         : actor,
-      entities: [
-        { type: 'Bag', id: String(id), label: updated.bagCode },
-        {
-          type: 'Item',
-          id: String(oldItemId),
-          label: itemOldAfter?.name ?? '',
-        },
-        ...(String(oldItemId) === String(newItemId)
-          ? []
-          : [
-              {
-                type: 'Item',
-                id: String(newItemId),
-                label: itemNewAfter?.name ?? '',
-              },
-            ]),
-      ],
+      entities: [{ type: 'Bag', id: String(id), label: updated.bagCode }],
       changes: {
-        before: {
-          bag: oldSnap,
-          oldItem: this.itemSnap(itemOldBefore),
-          newItem: this.itemSnap(itemNewBefore),
-        },
-        after: {
-          bag: this.bagSnap(updated),
-          oldItem: this.itemSnap(itemOldAfter),
-          newItem: this.itemSnap(itemNewAfter),
-        },
+        before: { bag: oldSnap, item: itemBeforeSnap },
+        after: { bag: this.bagSnap(updated), item: itemAfterSnap },
         delta: {
           bagStock: newStock - oldStock,
-          itemOpeningStock:
-            String(oldItemId) === String(newItemId)
-              ? newStock - oldStock
-              : { oldItem: -oldStock, newItem: newStock },
+          itemIdChanged: isItemChanging,
         },
       },
       meta: { dto },
     });
 
     return { status: true, msg: 'Bag updated', data: updated };
+  }
+
+  async addStock(id: string, dto: AddBagStockDto, actor?: ActivityActorInput) {
+    const qty = Number(dto.qty) || 0;
+    if (qty <= 0) throw new BadRequestException('qty must be > 0');
+
+    const bag = await this.bagModel.findById(id);
+    if (!bag) throw new NotFoundException('Bag not found');
+
+    const bagBefore = this.bagSnap(bag);
+
+    const itemId = bag.itemId ? String(bag.itemId) : '';
+    if (!itemId)
+      throw new BadRequestException('Bag has no item. Set item first.');
+
+    const maxQty = Number(bag.maxQty) || 0;
+    if (maxQty <= 0) throw new BadRequestException('Bag maxQty not set');
+
+    const cur = Number(bag.itemStock) || 0;
+    if (cur + qty > maxQty) {
+      throw new BadRequestException(
+        `Cannot exceed maxQty. maxQty=${maxQty}, current=${cur}, adding=${qty}`,
+      );
+    }
+
+    const itemBefore = await this.itemModel.findById(itemId).lean();
+    if (!itemBefore) throw new NotFoundException('Item not found');
+
+    // atomic-ish
+    const bagRes = await this.bagModel.updateOne(
+      { _id: bag._id, itemStock: { $lte: maxQty - qty } },
+      { $inc: { itemStock: qty } },
+    );
+    if (bagRes.modifiedCount !== 1) {
+      throw new BadRequestException('Failed to add stock (maxQty constraint)');
+    }
+
+    const itemRes = await this.itemModel.updateOne(
+      { _id: itemId },
+      { $inc: { openingStock: qty } },
+    );
+    if (itemRes.modifiedCount !== 1) {
+      // rollback bag
+      await this.bagModel.updateOne(
+        { _id: bag._id },
+        { $inc: { itemStock: -qty } },
+      );
+      throw new BadRequestException('Failed to update item openingStock');
+    }
+
+    const bagAfter = await this.bagModel.findById(id).lean();
+    const itemAfter = await this.itemModel.findById(itemId).lean();
+
+    await this.activity.log({
+      module: 'bags',
+      action: 'add_stock',
+      eventKey: 'bags.add_stock',
+      actor: dto.createdBy ? { userId: dto.createdBy } : actor,
+      entities: [
+        { type: 'Bag', id: String(id), label: bag.bagCode },
+        { type: 'Item', id: itemId, label: itemAfter?.name ?? '' },
+      ],
+      changes: {
+        before: { bag: bagBefore, item: this.itemSnap(itemBefore) },
+        after: { bag: this.bagSnap(bagAfter), item: this.itemSnap(itemAfter) },
+        delta: { qtyAdded: qty, bagStock: qty, itemOpeningStock: qty },
+      },
+      meta: { dto },
+    });
+
+    return { status: true, msg: 'Stock added', data: bagAfter };
   }
 
   async remove(id: string, createdBy?: string, actor?: ActivityActorInput) {

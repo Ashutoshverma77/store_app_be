@@ -19,6 +19,7 @@ export type ActivityAction =
   | 'delete'
   | 'transfer'
   | 'transferqr'
+  | 'add_stock'
   | 'start'
   | 'stop'
   | 'restart'
@@ -76,14 +77,38 @@ export const ActivityChangesSchema =
 
 @Schema({ timestamps: true })
 export class ActivityLog {
-  @Prop({ type: String, required: true, enum: [
-    'bags','items','sorting_jobs','sizes','grades','users','auth','system'
-  ] })
+  @Prop({
+    type: String,
+    required: true,
+    enum: [
+      'bags',
+      'items',
+      'sorting_jobs',
+      'sizes',
+      'grades',
+      'users',
+      'auth',
+      'system',
+    ],
+  })
   module: ActivityModule;
 
-  @Prop({ type: String, required: true, enum: [
-    'create','update','delete','transfer','transferqr','start','stop','restart','complete'
-  ] })
+  @Prop({
+    type: String,
+    required: true,
+    enum: [
+      'create',
+      'update',
+      'delete',
+      'transfer',
+      'transferqr',
+      'add_stock',
+      'start',
+      'stop',
+      'restart',
+      'complete',
+    ],
+  })
   action: ActivityAction;
 
   // stable key you can filter on: 'bags.create', 'bags.transfer.other_bag', etc.

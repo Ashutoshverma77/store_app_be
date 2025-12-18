@@ -10,16 +10,16 @@ import {
 } from 'class-validator';
 
 export class CreateBagDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   itemId: string;
 
   @IsString()
   @IsNotEmpty()
   bagCode: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   itemName: string;
 
   @IsNumber()
@@ -38,7 +38,7 @@ export class CreateBagDto {
   @IsNumber()
   @Min(0)
   transferQty?: number;
-  F;
+
   @IsOptional()
   @IsIn(['other_bag', 'sorting_machine', 'inStock'])
   transferType?: 'other_bag' | 'sorting_machine' | 'inStock';
