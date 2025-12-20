@@ -10,10 +10,16 @@ export type TransferType = 'other_bag' | 'sorting_machine';
 @Schema({ timestamps: true })
 export class Bag {
   @Prop({ default: '' })
+  parentItemId: string;
+
+  @Prop({ default: '' })
   itemId: string; // (or Types.ObjectId if you want relation)
 
   @Prop({ required: true, trim: true, unique: true })
   bagCode: string;
+
+  // @Prop({ required: true })
+  // bagNo: number; // numeric sequence (1,2,3...)
 
   @Prop({ default: '' })
   itemName: string;

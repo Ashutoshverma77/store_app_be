@@ -8,10 +8,9 @@ import {
   Delete,
   Put,
 } from '@nestjs/common';
-import { CreateItemReceiveDto } from './dto/create-item-receive.dto';
-import { UpdateItemReceiveDto } from './dto/update-item-receive.dto';
 import { ReceivingService } from './item-receive.service';
 import { ItemReceiveGateway } from './item-receive.gateway';
+import { ReceiveStockDto } from './dto/create-item-receive.dto';
 
 @Controller('/api/store/')
 export class ItemReceiveController {
@@ -75,5 +74,13 @@ export class ItemReceiveController {
     var data = await this.itemReceiveService.closeReceive(payload);
     this.gateway.broadcastAuthList().catch(() => {});
     return data;
+  }
+
+  @Put('places/:placeId/receive')
+  async receiveToPlace(
+    @Param('placeId') placeId: string,
+    @Body() dto: ReceiveStockDto,
+  ) {
+    return await this.itemReceiveService.receiveToPlace(placeId, dto);
   }
 }

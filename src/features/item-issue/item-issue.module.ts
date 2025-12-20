@@ -20,6 +20,7 @@ import {
   StorePlace,
   StorePlaceSchema,
 } from '../store-place/schema/store-place.schema';
+import { Bag, BagSchema } from '../bags/entities/bag.schema';
 
 @Module({
   imports: [
@@ -50,6 +51,13 @@ import {
           name: StorePlace.name,
           schema: StorePlaceSchema,
         },
+      ],
+      'store',
+    ),
+
+      MongooseModule.forFeature(
+      [
+        { name: Bag.name, schema: BagSchema },
       ],
       'store',
     ),

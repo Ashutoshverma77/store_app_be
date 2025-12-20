@@ -7,6 +7,7 @@ import { StoreItem } from '../store-item/schema/store-item.schema';
 import { StorePlace } from '../store-place/schema/store-place.schema';
 import { StorePlaceItemQuantity } from '../store-place/schema/store-place-item-quantity.schema';
 import { StockMovement } from '../item-receive/schema/stock-movement.schema';
+import { Bag, BagDocument } from '../bags/entities/bag.schema';
 
 @Injectable()
 export class IssueService {
@@ -27,6 +28,9 @@ export class IssueService {
 
     @InjectModel(StockMovement.name, 'store')
     private readonly movModel: Model<StockMovement>,
+
+    @InjectModel(Bag.name, 'store')
+    private readonly bagModel: Model<BagDocument>,
   ) {}
 
   // ---- helpers to deal with string-quantities on StorePlaceItemQuantity ----
@@ -678,7 +682,7 @@ export class IssueService {
         { 'lines.itemName': { $regex: s, $options: 'i' } },
       ];
     }
-    console.log(q);
+    // console.log(q);
     const [rows, total] = await Promise.all([
       this.issModel.find(q).sort(sort).skip(skip).limit(limit).lean(),
       this.issModel.countDocuments(q),
@@ -715,7 +719,7 @@ export class IssueService {
    * - Never negative anywhere
    * - Close issue if fully issued
    * ============================================================ */
-  async issueFromPlace(dto: any) {
+  async issueFromPlace2(dto: any) {
     try {
       // ---- normalize single-part payload into "parts" ----
       const issueIdRaw = String(dto?.issueId ?? '').trim();
@@ -915,6 +919,205 @@ export class IssueService {
     }
   }
 
+  async issueFromPlace(dto: any) {
+    try {
+      const issueIdRaw = String(dto?.issueId ?? '').trim();
+      const itemIdRaw = String(dto?.itemid ?? dto?.itemId ?? '').trim();
+      const placeIdRaw = String(dto?.placeId ?? '').trim();
+      const qtyRaw = Number(dto?.quantity ?? dto?.qty ?? 0);
+
+      if (
+        !isValidObjectId(issueIdRaw) ||
+        !isValidObjectId(itemIdRaw) ||
+        !isValidObjectId(placeIdRaw) ||
+        !Number.isInteger(qtyRaw) ||
+        qtyRaw <= 0
+      ) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      const issueId = new Types.ObjectId(issueIdRaw);
+      const itemId = new Types.ObjectId(itemIdRaw);
+      const placeId = new Types.ObjectId(placeIdRaw);
+
+      const [issueDoc, itemDoc, placeDoc] = await Promise.all([
+        this.issModel.findById(issueId).lean(),
+        this.itemModel.findById(itemId).lean(),
+        this.placeModel.findById(placeId).lean(),
+      ]);
+
+      if (!issueDoc || !itemDoc || !placeDoc) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      if (issueDoc.status !== 'APPROVED') {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      const lineByItem = new Map<
+        string,
+        {
+          idx: number;
+          requested: number;
+          approved: number;
+          issued: number;
+          returned: number;
+        }
+      >();
+
+      (issueDoc.lines ?? []).forEach((l: any, i: number) => {
+        const hex = new Types.ObjectId(l.itemId).toHexString();
+        lineByItem.set(hex, {
+          idx: i,
+          requested: Number(l.requestedQty ?? 0),
+          approved: Number(l.approvedQty ?? 0),
+          issued: Number(l.issuedQty ?? 0),
+          returned: Number(l.returnQty ?? 0),
+        });
+      });
+
+      const itemHex = itemId.toHexString();
+      const placeHex = placeId.toHexString();
+      const qty = qtyRaw;
+
+      const line = lineByItem.get(itemHex);
+      if (!line) return { msg: 'Issue Item Failed.......', status: false };
+
+      const remaining = line.requested - line.issued;
+      if (qty > remaining || remaining < 0) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      const spiq = await this.spiqModel
+        .findOne({ itemId: itemHex, placeId: placeHex })
+        .lean();
+
+      if (!spiq) return { msg: 'Issue Item Failed.......', status: false };
+
+      const total = this.toInt(spiq.totalQuantity);
+      const issuedHere = this.toInt(spiq.IssuedQuantity);
+      const completed = this.toInt(spiq.completedQuantity);
+      const placeAvail = total - issuedHere - completed;
+
+      if (qty > placeAvail) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      if ((itemDoc.stockIssueQuantity ?? 0) < qty) {
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      try {
+        // 1) Update issue line
+        const newIssued = line.issued + qty;
+        const newApproved = line.approved - qty;
+
+        await this.issModel.updateOne(
+          { _id: issueDoc._id },
+          {
+            $set: {
+              [`lines.${line.idx}.issuedQty`]: newIssued,
+              [`lines.${line.idx}.approvedQty`]: newApproved,
+            },
+          },
+        );
+
+        // 2) Update StoreItem counters: reserved -> completed
+        const res = await this.itemModel.updateOne(
+          { _id: itemId, stockIssueQuantity: { $gte: qty } },
+          { $inc: { stockIssueQuantity: -qty, stockissueCompleted: +qty } },
+        );
+
+        if (res.matchedCount !== 1 || res.modifiedCount !== 1) {
+          throw new Error('Reserved stock would go negative');
+        }
+
+        // 3) Update SPIQ (IssuedQuantity += qty)
+        const spiqDoc = await this.spiqModel.findOne({
+          itemId: itemHex,
+          placeId: placeHex,
+        });
+        const curIssued = this.toInt(spiqDoc!.IssuedQuantity);
+        spiqDoc!.IssuedQuantity = this.toStr(curIssued + qty);
+        await spiqDoc!.save();
+
+        // ✅ 3.5) If item is bag => create bags
+
+        let bagMeta: any = null;
+        if (itemDoc.isBag === true) {
+          const maxQty = Number(itemDoc.maxQuantity ?? 0);
+          bagMeta = await this.createBagsForIssuedQty({
+            itemHex,
+            itemName: String(itemDoc.name ?? ''),
+            qty,
+            maxQty,
+          });
+        }
+
+        // 4) Movement record
+        await this.movModel.create({
+          itemId,
+          placeId,
+          issueId,
+          type: 'ISSUE',
+          qty,
+          refNo: String(issueDoc.issNo ?? ''),
+          operatedBy:
+            dto.userId && isValidObjectId(dto.userId)
+              ? new Types.ObjectId(dto.userId)
+              : new Types.ObjectId(issueDoc.createdBy),
+          note:
+            itemDoc.isBag === true && bagMeta
+              ? `Issue to place (reserved → completed), created bags ${bagMeta.startNo}-${bagMeta.endNo}`
+              : 'Issue to place (reserved → completed)',
+        });
+
+        // 5) Auto-close if fully issued
+        const fresh = await this.issModel.findById(issueDoc._id).lean();
+        const fullyIssued = (fresh?.lines ?? []).every(
+          (l: any) => Number(l.issuedQty ?? 0) >= Number(l.requestedQty ?? 0),
+        );
+
+        if (fullyIssued) {
+          await this.movModel.create({
+            itemId,
+            placeId,
+            issueId,
+            type: 'CLOSED',
+            qty: 0,
+            refNo: String(issueDoc.issNo ?? ''),
+            operatedBy:
+              dto.userId && isValidObjectId(dto.userId)
+                ? new Types.ObjectId(dto.userId)
+                : new Types.ObjectId(issueDoc.createdBy),
+            note: 'Issue closed (fully issued)',
+          });
+
+          await this.issModel.updateOne(
+            { _id: issueDoc._id },
+            {
+              $set: {
+                status: 'CLOSED',
+                closedAt: new Date(),
+                ...(dto.userId && isValidObjectId(dto.userId)
+                  ? { closedBy: new Types.ObjectId(dto.userId) }
+                  : {}),
+              },
+            },
+          );
+        }
+      } catch (e) {
+        this.logger.error(`issueFromPlace tx failed: ${e?.message || e}`);
+        return { msg: 'Issue Item Failed.......', status: false };
+      }
+
+      return { msg: 'Issue From Place Completed.......', status: true };
+    } catch (e) {
+      this.logger.error(`issueFromPlace outer failed: ${e?.message || e}`);
+      return { msg: 'Issue Item Failed.......', status: false };
+    }
+  }
+
   /* ============================================================
    * 4) RETURN TO STOCK
    * dto: { parts:[{ itemId, placeId, qty }], userId? }
@@ -1003,8 +1206,8 @@ export class IssueService {
       }
       const spiqIssued = this.toInt(spiq.IssuedQuantity);
 
-      console.log(qty);
-      console.log(spiqIssued);
+      // console.log(qty);
+      // console.log(spiqIssued);
 
       if (qty >= spiqIssued) {
         // cannot lower IssuedQuantity below 0
@@ -1321,5 +1524,63 @@ export class IssueService {
       this.logger.error(`closeIssue failed: ${e?.message || e}`);
       return { msg: 'Issue Item Failed.......', status: false };
     }
+  }
+
+  private formatBagCode(bagNo: number, itemName: string) {
+    // change format if you want
+    return `${itemName}-${String(bagNo).padStart(6, '0')}`;
+  }
+
+  private async createBagsForIssuedQty(params: {
+    itemHex: string;
+    itemName: string;
+    qty: number;
+    maxQty: number;
+  }) {
+    const { itemHex, itemName, qty, maxQty } = params;
+
+    if (!Number.isFinite(maxQty) || maxQty <= 0) {
+      throw new Error('Invalid maxQty for bag item');
+    }
+
+    const bagCount = Math.ceil(qty / maxQty);
+
+    // ✅ Atomic counter increment (safe in concurrency)
+    const counter = await this.bagModel.find(
+      // { key: 'bag' },
+      // { $inc: { seq: bagCount } },
+      // { new: true, upsert: true },
+      { parentItemId: itemHex },
+    );
+
+    const endNo = counter.length;
+    const startNo = endNo - bagCount + 1;
+
+    const docs: any[] = [];
+    let remaining = qty;
+
+    for (let n = startNo; n <= endNo; n++) {
+      const stockForThisBag = Math.min(maxQty, remaining);
+      remaining -= stockForThisBag;
+
+      docs.push({
+        parentItemId: itemHex,
+        itemId: '', // your Bag schema uses string
+        itemName: '',
+        // bagNo: n,
+        bagCode: this.formatBagCode(n + 1, itemName), // unique
+        itemStock: 0,
+        itemUsed: 0,
+        approvedStatus: 'approved', // change to 'pending' if your workflow needs approval
+        transferType: 'inStock',
+        transferQty: 0,
+        maxQty: maxQty,
+      });
+    }
+
+    // Insert all bags
+    await this.bagModel.insertMany(docs);
+
+    return { bagCount, startNo, endNo };
   }
 }

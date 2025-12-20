@@ -12,6 +12,7 @@ import { StoreItem } from '../store-item/schema/store-item.schema';
 import { StockMovement } from './schema/stock-movement.schema';
 import { StorePlaceItemQuantity } from '../store-place/schema/store-place-item-quantity.schema';
 import { StorePlace } from '../store-place/schema/store-place.schema';
+import { ReceiveStockDto } from './dto/create-item-receive.dto';
 
 @Injectable()
 export class ReceivingService {
@@ -833,8 +834,8 @@ export class ReceivingService {
         const approved = Number(l?.approvedQty ?? 0);
         const received = Number(l?.receivedQty ?? 0);
 
-        console.log(l?.approvedQty);
-        console.log(l?.receivedQty);
+        // console.log(l?.approvedQty);
+        // console.log(l?.receivedQty);
         if (received > approved) {
           return { msg: 'Receive Item Failed.......', status: false };
         }
@@ -1030,4 +1031,93 @@ export class ReceivingService {
     rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
     return rows.slice(0, limit);
   }
+
+  async receiveToPlace(placeId: string, dto: ReceiveStockDto) {
+    const qty = Number(dto.qty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new BadRequestException('qty must be a positive number');
+    }
+
+    // Validate item ObjectId for StoreItem collection
+    let itemObjectId: Types.ObjectId;
+    try {
+      itemObjectId = new Types.ObjectId(dto.itemId);
+    } catch {
+      throw new BadRequestException('Invalid itemId');
+    }
+
+    // 1) Find StoreItem and increment stock
+    const item = await this.itemModel.findById(itemObjectId);
+    if (!item) throw new NotFoundException('StoreItem not found');
+
+    // 2) Find place-item-qty record by placeId + itemId (string match)
+    let placeItem = await this.spiqModel.findOne({
+      placeId: placeId,
+      itemId: dto.itemId,
+    });
+
+    if (!placeItem) {
+      // Create new for this place
+      // Prefer DB truth for itemName
+      const itemName = item.name;
+      const placeName = dto.placeName ?? ''; // if you have Place model, fetch it instead
+
+      placeItem = await this.spiqModel.create({
+        itemId: dto.itemId,
+        itemName,
+        placeId: placeId,
+        placeName,
+        totalQuantity: qty,
+        IssuedQuantity: '0',
+        completedQuantity: '0',
+        remark: dto.remark ?? '',
+        createdBy: dto.createdBy ?? '',
+      });
+    } else {
+      // Add qty to totalQuantity (stored as string)
+      const currentTotal = toNum(placeItem.totalQuantity);
+      const nextTotal = currentTotal + qty;
+
+      placeItem.totalQuantity = String(nextTotal);
+
+      // optionally update remark/createdBy
+      if (dto.remark != null) placeItem.remark = dto.remark;
+      if (dto.createdBy != null) placeItem.createdBy = dto.createdBy;
+
+      await placeItem.save();
+    }
+
+    // Update StoreItem: total + available, ensure stockPlace contains this place
+    await this.itemModel.updateOne(
+      { _id: itemObjectId },
+      {
+        $inc: { totalStockQuantity: qty, stockAvailableQuantity: qty },
+        $addToSet: { stockPlace: placeId },
+      },
+    );
+
+    await this.movModel.create({
+      itemId: dto.itemId,
+      placeId: placeId,
+      receivingId: '',
+      type: 'RECEIVE',
+      qty: qty ?? 0,
+      refNo: '',
+      operatedBy: new Types.ObjectId(dto.createdBy),
+      note: 'RECEIVED',
+    });
+    return {
+      msg: 'Receive Item Added Successfully.......',
+      status: true,
+      placeId,
+      itemId: dto.itemId,
+      placeItemQuantityId: placeItem._id.toString(),
+      addedQty: qty,
+      newPlaceTotal: placeItem.totalQuantity,
+    };
+  }
+}
+function toNum(v: any): number {
+  const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
+  return Number.isFinite(n) ? n : 0;
 }

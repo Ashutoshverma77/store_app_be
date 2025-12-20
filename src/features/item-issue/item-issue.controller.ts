@@ -67,7 +67,7 @@ export class ItemIssueController {
 
   @Put('returnitemissue')
   async returnToStock(@Body() payload: any) {
-    console.log(payload);
+    // console.log(payload);
     var data = await this.itemIssueService.returnToStock(payload);
     this.gateway.broadcastAuthList().catch(() => {});
     return data;
@@ -75,7 +75,7 @@ export class ItemIssueController {
 
   @Put('issuereject')
   async issueReject(@Body() payload: any) {
-    console.log(payload);
+    // console.log(payload);
     var data = await this.itemIssueService.rejectIssue(payload);
     this.gateway.broadcastAuthList().catch(() => {});
     return data;
@@ -83,7 +83,7 @@ export class ItemIssueController {
 
   @Put('closeitemissue')
   async closeItemIssue(@Body() payload: any) {
-    console.log(payload);
+    // console.log(payload);
     var data = await this.itemIssueService.closeIssue(payload);
     this.gateway.broadcastAuthList().catch(() => {});
     return data;

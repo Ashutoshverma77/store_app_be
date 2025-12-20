@@ -126,8 +126,30 @@ export class StoreItemService {
   }
 
   async create(createStoreItemDto: CreateStoreItemDto) {
-    var data = await this.storeItemSchema.create(createStoreItemDto);
-    const id = data._id.toString(); // or just: const id = doc.id;
+    const isBag = createStoreItemDto.isBag === true;
+
+    // ✅ enforce maxQuantity rules server-side too
+    const payload: Partial<StoreItem> = {
+      ...createStoreItemDto,
+      isBag,
+      maxQuantity: isBag ? (createStoreItemDto.maxQuantity ?? 0) : 0,
+    };
+
+    const data = await this.storeItemSchema.create(payload);
+    const id = data._id.toString();
+    await this.movModel.create({
+      itemId: id,
+      placeId: id,
+      type: 'CREATE',
+      qty: '',
+      refNo: 'CREATE ITEM',
+      operatedBy:
+        createStoreItemDto.createdBy == null &&
+        createStoreItemDto.createdBy == ''
+          ? new Types.ObjectId(createStoreItemDto.createdBy)
+          : '',
+      note: 'CREATE ITEM',
+    });
     return {
       msg: 'Store Item Created Successfully.....',
       status: true,

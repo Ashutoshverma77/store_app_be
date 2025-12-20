@@ -43,7 +43,7 @@ export class StoreItemGateway {
         sort: payload?.sort,
       });
 
-      console.log(result);
+      // console.log(result);
       client.emit('store:findAllStoreItemFilter', result);
     } catch (e) {
       client.emit('store:findAllStoreItemFilter', {

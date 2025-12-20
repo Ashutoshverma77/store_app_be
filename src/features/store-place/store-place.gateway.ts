@@ -70,7 +70,7 @@ export class StorePlaceGateway {
       search: body?.search ? String(body.search) : undefined,
       limit: body?.limit ? Number(body.limit) : 200,
     });
-    console.log(data);
+    // console.log(data);
     client.emit('stock:listPlaceItems', data);
     // reply on same event name (your convention)
     return;

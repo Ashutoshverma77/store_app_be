@@ -34,13 +34,21 @@ export class StoreItem {
   stockPlace: string[];
 
   @Prop({ required: true })
-  unit: string; // e.g. pcs / kg / box
+  unit: string;
 
   @Prop({ default: '' })
   imageUrl: string;
 
   @Prop({ default: '' })
   createdBy: string;
+
+  // ✅ NEW
+  @Prop({ type: Boolean, default: false })
+  isBag: boolean;
+
+  // ✅ NEW (only meaningful when isBag=true)
+  @Prop({ type: Number, min: 0, default: 0 })
+  maxQuantity: number;
 }
 
 export const StoreItemSchema = SchemaFactory.createForClass(StoreItem);

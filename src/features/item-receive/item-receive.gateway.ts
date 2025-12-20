@@ -38,7 +38,7 @@ export class ItemReceiveGateway {
   async receivingsApprovePaged(client: any, body: any) {
     var authUserList = await this.receivingService.findStatusPaged(body);
 
-    console.log(authUserList);
+    // console.log(authUserList);
 
     client.emit('store:receivings:approve:paged', authUserList);
   }

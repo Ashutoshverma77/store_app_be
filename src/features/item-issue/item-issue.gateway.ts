@@ -39,14 +39,14 @@ export class ItemIssueGateway {
   @SubscribeMessage('store:findStatusItemIssueApprovedPaged')
   async findStatusApprovedItemIssuePaged(client: any, body: any) {
     var authUserList = await this.issueService.findStatusPaged(body);
-    console.log(authUserList);
+    // console.log(authUserList);
     client.emit('store:findStatusItemIssueApprovedPaged', authUserList);
   }
 
   @SubscribeMessage('store:findStatusItemIssueClosePaged')
   async findStatusCloseItemIssuePaged(client: any, body: any) {
     var authUserList = await this.issueService.findStatusPaged(body);
-    console.log(authUserList);
+    // console.log(authUserList);
     client.emit('store:findStatusItemIssueClosePaged', authUserList);
   }
 
@@ -68,6 +68,8 @@ export class ItemIssueGateway {
   @SubscribeMessage('issue:listByItem')
   async findListByItem(client: any, payload: any) {
     var authUserList = await this.issueService.findListByItem(payload.itemId);
+
+    console.log(authUserList);
     client.emit('issue:listByItem', authUserList);
     return;
   }
