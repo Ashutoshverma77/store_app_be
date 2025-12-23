@@ -26,6 +26,7 @@ export class ItemIssueController {
     // return;
     var data = await this.itemIssueService.createIssue(payload);
     this.gateway.broadcastAuthList().catch(() => {});
+    this.gateway.broadcastApprovedItemIssuePagedAuthList().catch(() => {});
     return data;
   }
 
@@ -55,6 +56,8 @@ export class ItemIssueController {
   async approveReceive(@Param('id') id: string, @Body() payload: any) {
     var data = await this.itemIssueService.approveIssue(payload);
     this.gateway.broadcastAuthList().catch(() => {});
+    this.gateway.broadcastApprovedItemIssuePagedAuthList().catch(() => {});
+    this.gateway.broadcastCloseItemIssuePaged().catch(() => {});
     return data;
   }
 
@@ -62,6 +65,8 @@ export class ItemIssueController {
   async Issuetoplace(@Body() payload: any) {
     var data = await this.itemIssueService.issueFromPlace(payload);
     this.gateway.broadcastAuthList().catch(() => {});
+    this.gateway.broadcastApprovedItemIssuePagedAuthList().catch(() => {});
+    this.gateway.broadcastCloseItemIssuePaged().catch(() => {});
     return data;
   }
 
@@ -70,6 +75,8 @@ export class ItemIssueController {
     // console.log(payload);
     var data = await this.itemIssueService.returnToStock(payload);
     this.gateway.broadcastAuthList().catch(() => {});
+    this.gateway.broadcastApprovedItemIssuePagedAuthList().catch(() => {});
+    this.gateway.broadcastCloseItemIssuePaged().catch(() => {});
     return data;
   }
 
@@ -78,6 +85,8 @@ export class ItemIssueController {
     // console.log(payload);
     var data = await this.itemIssueService.rejectIssue(payload);
     this.gateway.broadcastAuthList().catch(() => {});
+    this.gateway.broadcastApprovedItemIssuePagedAuthList().catch(() => {});
+    this.gateway.broadcastCloseItemIssuePaged().catch(() => {});
     return data;
   }
 
@@ -86,6 +95,8 @@ export class ItemIssueController {
     // console.log(payload);
     var data = await this.itemIssueService.closeIssue(payload);
     this.gateway.broadcastAuthList().catch(() => {});
+    this.gateway.broadcastApprovedItemIssuePagedAuthList().catch(() => {});
+    this.gateway.broadcastCloseItemIssuePaged().catch(() => {});
     return data;
   }
 

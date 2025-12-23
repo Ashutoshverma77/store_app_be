@@ -20,6 +20,30 @@ export class ItemIssueGateway {
     this.server.emit('store:findAllItemIssuePaged', list); // broadcast to all clients
   }
 
+  async broadcastApprovedItemIssuePagedAuthList() {
+    var authUserList = await this.issueService.findStatusPaged({
+      page: 1,
+      limit: 10,
+      search: '',
+      status: ['DRAFT'],
+      sort: '-createdAt',
+    });
+    // console.log(authUserList);
+    this.server.emit('store:findStatusItemIssueApprovedPaged', authUserList);
+  }
+
+  async broadcastCloseItemIssuePaged() {
+    var authUserList = await this.issueService.findStatusPaged({
+      page: 1,
+      limit: 10,
+      search: '',
+      status: ['CLOSED'],
+      sort: '-createdAt',
+    });
+    // console.log(authUserList);
+    this.server.emit('store:findStatusItemIssueClosePaged', authUserList);
+  }
+
   @SubscribeMessage('store:findAllItemIssue')
   async findAll(client: any, payload: any) {
     var authUserList = await this.issueService.findAll();

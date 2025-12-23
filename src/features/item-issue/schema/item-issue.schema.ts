@@ -1,4 +1,4 @@
-// src/issue/schemas/issue.schema.ts
+// issue.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
@@ -7,7 +7,7 @@ class IssueLine {
   itemId: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
-  itemName: string; // <-- add item name for easier reference
+  itemName: string;
 
   @Prop({ required: true, min: 1 })
   requestedQty: number;
@@ -25,10 +25,37 @@ class IssueLine {
   unit: string;
 }
 
+// ✅ NEW: Issued allocations per place (this solves your problem)
+class IssueAllocation {
+  @Prop({ type: Types.ObjectId, ref: 'StoreItem', required: true })
+  itemId: Types.ObjectId;
+
+  @Prop({ required: true, trim: true })
+  itemName: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'StorePlace', required: true })
+  placeId: Types.ObjectId;
+
+  @Prop({ required: true, trim: true })
+  placeName: string;
+
+  @Prop({ required: true, min: 1 })
+  qty: number; // issued qty from this place
+
+  @Prop({ default: 0, min: 0 })
+  returnedQty: number; // returned against this allocation
+
+  @Prop({ default: Date.now })
+  issuedAt: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  issuedBy?: Types.ObjectId;
+}
+
 @Schema({ timestamps: true, versionKey: false })
 export class Issue {
   @Prop({ required: true, unique: true })
-  issNo: string; // e.g. ISS-2025-00001
+  issNo: string;
 
   @Prop({ default: '' })
   reason: string;
@@ -59,6 +86,11 @@ export class Issue {
 
   @Prop()
   closedAt?: Date;
+
+  // ✅ NEW FIELD
+  @Prop({ type: [IssueAllocation], default: [] })
+  allocations: IssueAllocation[];
 }
 
+export type IssueDocument = HydratedDocument<Issue>;
 export const IssueSchema = SchemaFactory.createForClass(Issue);

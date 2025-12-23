@@ -141,7 +141,7 @@ export class StoreItemService {
       itemId: id,
       placeId: id,
       type: 'CREATE',
-      qty: '',
+      qty: 0,
       refNo: 'CREATE ITEM',
       operatedBy:
         createStoreItemDto.createdBy == null &&

@@ -64,6 +64,9 @@ export class StorePlaceGateway {
 
   @SubscribeMessage('stock:listPlaceItems')
   async listPlaceItems(client: any, body: any) {
+    const placeId = String(body?.placeId ?? '');
+    const rid = String(body?.rid ?? '');
+
     const data = await this.storePlaceService.listPlaceItems({
       placeId: String(body?.placeId ?? ''),
       itemId: body?.itemId ? String(body.itemId) : undefined,
@@ -71,7 +74,11 @@ export class StorePlaceGateway {
       limit: body?.limit ? Number(body.limit) : 200,
     });
     // console.log(data);
-    client.emit('stock:listPlaceItems', data);
+    client.emit('stock:listPlaceItems', {
+      rid,
+      placeId,
+      data,
+    });
     // reply on same event name (your convention)
     return;
   }

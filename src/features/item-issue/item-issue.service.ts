@@ -920,6 +920,21 @@ export class IssueService {
   }
 
   async issueFromPlace(dto: any) {
+    const fail = () => ({ msg: 'Issue Item Failed.......', status: false });
+
+    // small helper (robust for ObjectId/string)
+    const toHex = (v: any) => {
+      try {
+        if (!v) return '';
+        if (v instanceof Types.ObjectId) return v.toHexString();
+        if (Types.ObjectId.isValid(v))
+          return new Types.ObjectId(v).toHexString();
+        return String(v);
+      } catch {
+        return '';
+      }
+    };
+
     try {
       const issueIdRaw = String(dto?.issueId ?? '').trim();
       const itemIdRaw = String(dto?.itemid ?? dto?.itemId ?? '').trim();
@@ -927,124 +942,139 @@ export class IssueService {
       const qtyRaw = Number(dto?.quantity ?? dto?.qty ?? 0);
 
       if (
-        !isValidObjectId(issueIdRaw) ||
-        !isValidObjectId(itemIdRaw) ||
-        !isValidObjectId(placeIdRaw) ||
+        !Types.ObjectId.isValid(issueIdRaw) ||
+        !Types.ObjectId.isValid(itemIdRaw) ||
+        !Types.ObjectId.isValid(placeIdRaw) ||
         !Number.isInteger(qtyRaw) ||
         qtyRaw <= 0
       ) {
-        return { msg: 'Issue Item Failed.......', status: false };
+        return fail();
       }
 
       const issueId = new Types.ObjectId(issueIdRaw);
       const itemId = new Types.ObjectId(itemIdRaw);
       const placeId = new Types.ObjectId(placeIdRaw);
-
-      const [issueDoc, itemDoc, placeDoc] = await Promise.all([
-        this.issModel.findById(issueId).lean(),
-        this.itemModel.findById(itemId).lean(),
-        this.placeModel.findById(placeId).lean(),
-      ]);
-
-      if (!issueDoc || !itemDoc || !placeDoc) {
-        return { msg: 'Issue Item Failed.......', status: false };
-      }
-
-      if (issueDoc.status !== 'APPROVED') {
-        return { msg: 'Issue Item Failed.......', status: false };
-      }
-
-      const lineByItem = new Map<
-        string,
-        {
-          idx: number;
-          requested: number;
-          approved: number;
-          issued: number;
-          returned: number;
-        }
-      >();
-
-      (issueDoc.lines ?? []).forEach((l: any, i: number) => {
-        const hex = new Types.ObjectId(l.itemId).toHexString();
-        lineByItem.set(hex, {
-          idx: i,
-          requested: Number(l.requestedQty ?? 0),
-          approved: Number(l.approvedQty ?? 0),
-          issued: Number(l.issuedQty ?? 0),
-          returned: Number(l.returnQty ?? 0),
-        });
-      });
-
-      const itemHex = itemId.toHexString();
-      const placeHex = placeId.toHexString();
       const qty = qtyRaw;
 
-      const line = lineByItem.get(itemHex);
-      if (!line) return { msg: 'Issue Item Failed.......', status: false };
+      const operatedBy =
+        dto?.userId && Types.ObjectId.isValid(String(dto.userId))
+          ? new Types.ObjectId(String(dto.userId))
+          : undefined;
 
-      const remaining = line.requested - line.issued;
-      if (qty > remaining || remaining < 0) {
-        return { msg: 'Issue Item Failed.......', status: false };
-      }
+      // Use session if possible (if not replica set, it will throw; we fallback)
+      const session = await this.issModel.db.startSession();
 
-      const spiq = await this.spiqModel
-        .findOne({ itemId: itemHex, placeId: placeHex })
-        .lean();
+      const run = async (useSession: boolean) => {
+        const s = useSession ? session : undefined;
 
-      if (!spiq) return { msg: 'Issue Item Failed.......', status: false };
+        const [issueDoc, itemDoc, placeDoc] = await Promise.all([
+          this.issModel
+            .findById(issueId)
+            // .session(s)
+            .lean(),
+          this.itemModel
+            .findById(itemId)
+            // .session(s)
+            .lean(),
+          this.placeModel
+            .findById(placeId)
+            // .session(s)
+            .lean(),
+        ]);
 
-      const total = this.toInt(spiq.totalQuantity);
-      const issuedHere = this.toInt(spiq.IssuedQuantity);
-      const completed = this.toInt(spiq.completedQuantity);
-      const placeAvail = total - issuedHere - completed;
+        if (!issueDoc || !itemDoc || !placeDoc) return fail();
+        if (String(issueDoc.status) !== 'APPROVED') return fail();
 
-      if (qty > placeAvail) {
-        return { msg: 'Issue Item Failed.......', status: false };
-      }
+        // Find line for item
+        const lines: any[] = Array.isArray(issueDoc.lines)
+          ? issueDoc.lines
+          : [];
+        const lineIndex = lines.findIndex(
+          (l: any) => toHex(l.itemId) === toHex(itemId),
+        );
+        if (lineIndex < 0) return fail();
 
-      if ((itemDoc.stockIssueQuantity ?? 0) < qty) {
-        return { msg: 'Issue Item Failed.......', status: false };
-      }
+        const line = lines[lineIndex];
+        const requested = Number(line.requestedQty ?? 0);
+        const approved = Number(line.approvedQty ?? 0);
+        const issued = Number(line.issuedQty ?? 0);
 
-      try {
-        // 1) Update issue line
-        const newIssued = line.issued + qty;
-        const newApproved = line.approved - qty;
+        // Guards
+        const remainingByRequest = requested - issued;
+        if (remainingByRequest < 0) return fail();
 
-        await this.issModel.updateOne(
-          { _id: issueDoc._id },
+        // ✅ strong guard: do not issue more than approved remaining
+        if (qty > approved) return fail();
+
+        if (qty > remainingByRequest) return fail();
+
+        const itemHex = itemId.toHexString();
+        const placeHex = placeId.toHexString();
+
+        // SPIQ available check
+        const spiq = await this.spiqModel
+          .findOne({ itemId: itemHex, placeId: placeHex })
+          // .session(s)
+          .lean();
+
+        if (!spiq) return fail();
+
+        const total = this.toInt(spiq.totalQuantity);
+        const issuedHere = this.toInt(spiq.IssuedQuantity);
+        const completed = this.toInt(spiq.completedQuantity);
+        const placeAvail = total - issuedHere - completed;
+
+        if (qty > placeAvail) return fail();
+
+        // Item-level reserved stock guard
+        if (Number(itemDoc.stockIssueQuantity ?? 0) < qty) return fail();
+
+        // 1) Update issue line: issued += qty, approved -= qty
+        const newIssued = issued + qty;
+        const newApproved = approved - qty;
+
+        const resIssue = await this.issModel.updateOne(
+          { _id: issueId },
           {
             $set: {
-              [`lines.${line.idx}.issuedQty`]: newIssued,
-              [`lines.${line.idx}.approvedQty`]: newApproved,
+              [`lines.${lineIndex}.issuedQty`]: newIssued,
+              [`lines.${lineIndex}.approvedQty`]: newApproved,
             },
           },
+          { session: s },
         );
 
-        // 2) Update StoreItem counters: reserved -> completed
-        const res = await this.itemModel.updateOne(
+        if (resIssue.matchedCount !== 1)
+          throw new Error('Failed to update issue line');
+
+        // 2) StoreItem counters: reserved -> completed
+        const resItem = await this.itemModel.updateOne(
           { _id: itemId, stockIssueQuantity: { $gte: qty } },
           { $inc: { stockIssueQuantity: -qty, stockissueCompleted: +qty } },
+          { session: s },
         );
 
-        if (res.matchedCount !== 1 || res.modifiedCount !== 1) {
+        if (resItem.matchedCount !== 1 || resItem.modifiedCount !== 1) {
           throw new Error('Reserved stock would go negative');
         }
 
-        // 3) Update SPIQ (IssuedQuantity += qty)
+        // 3) SPIQ: IssuedQuantity += qty
         const spiqDoc = await this.spiqModel.findOne({
           itemId: itemHex,
           placeId: placeHex,
         });
-        const curIssued = this.toInt(spiqDoc!.IssuedQuantity);
-        spiqDoc!.IssuedQuantity = this.toStr(curIssued + qty);
-        await spiqDoc!.save();
+        // .session(s);
+        if (!spiqDoc) throw new Error('SPIQ doc missing');
+        const curIssued = this.toInt(spiqDoc.IssuedQuantity);
+        spiqDoc.IssuedQuantity = this.toStr(curIssued + qty);
+        await spiqDoc.save({ session: s });
 
-        // ✅ 3.5) If item is bag => create bags
-
+        // 3.5) Bag creation (optional)
         let bagMeta: any = null;
-        if (itemDoc.isBag === true) {
+        if (
+          itemDoc.isBag === true &&
+          typeof this.createBagsForIssuedQty === 'function'
+        ) {
           const maxQty = Number(itemDoc.maxQuantity ?? 0);
           bagMeta = await this.createBagsForIssuedQty({
             itemHex,
@@ -1054,66 +1084,106 @@ export class IssueService {
           });
         }
 
-        // 4) Movement record
-        await this.movModel.create({
-          itemId,
-          placeId,
-          issueId,
-          type: 'ISSUE',
-          qty,
-          refNo: String(issueDoc.issNo ?? ''),
-          operatedBy:
-            dto.userId && isValidObjectId(dto.userId)
-              ? new Types.ObjectId(dto.userId)
-              : new Types.ObjectId(issueDoc.createdBy),
-          note:
-            itemDoc.isBag === true && bagMeta
-              ? `Issue to place (reserved → completed), created bags ${bagMeta.startNo}-${bagMeta.endNo}`
-              : 'Issue to place (reserved → completed)',
-        });
+        // 4) ✅ Track issued-from place allocation (CRITICAL for return)
+        await this.issModel.updateOne(
+          { _id: issueId },
+          {
+            $push: {
+              allocations: {
+                itemId,
+                itemName: String(itemDoc.name ?? ''),
+                placeId,
+                placeName: String(placeDoc.name ?? ''),
+                qty,
+                returnedQty: 0,
+                issuedAt: new Date(),
+                ...(operatedBy ? { issuedBy: operatedBy } : {}),
+              },
+            },
+          },
+          { session: s },
+        );
 
-        // 5) Auto-close if fully issued
-        const fresh = await this.issModel.findById(issueDoc._id).lean();
+        // 5) Movement record
+        await this.movModel.create(
+          [
+            {
+              itemId,
+              placeId,
+              issueId,
+              type: 'ISSUE',
+              qty,
+              refNo: String(issueDoc.issNo ?? ''),
+              operatedBy: operatedBy ?? new Types.ObjectId(issueDoc.createdBy),
+              note:
+                itemDoc.isBag === true && bagMeta
+                  ? `Issue from place, created bags ${bagMeta.startNo}-${bagMeta.endNo}`
+                  : 'Issue from place',
+            },
+          ],
+          // { session: s },
+        );
+
+        // 6) Auto-close if fully issued
+        const fresh = await this.issModel
+          .findById(issueId)
+          // session(s).
+          .lean();
         const fullyIssued = (fresh?.lines ?? []).every(
           (l: any) => Number(l.issuedQty ?? 0) >= Number(l.requestedQty ?? 0),
         );
 
         if (fullyIssued) {
-          await this.movModel.create({
-            itemId,
-            placeId,
-            issueId,
-            type: 'CLOSED',
-            qty: 0,
-            refNo: String(issueDoc.issNo ?? ''),
-            operatedBy:
-              dto.userId && isValidObjectId(dto.userId)
-                ? new Types.ObjectId(dto.userId)
-                : new Types.ObjectId(issueDoc.createdBy),
-            note: 'Issue closed (fully issued)',
-          });
+          await this.movModel.create(
+            [
+              {
+                itemId,
+                placeId,
+                issueId,
+                type: 'CLOSED',
+                qty: 0,
+                refNo: String(issueDoc.issNo ?? ''),
+                operatedBy:
+                  operatedBy ?? new Types.ObjectId(issueDoc.createdBy),
+                note: 'Issue closed (fully issued)',
+              },
+            ],
+            { session: s },
+          );
 
           await this.issModel.updateOne(
-            { _id: issueDoc._id },
+            { _id: issueId },
             {
               $set: {
                 status: 'CLOSED',
                 closedAt: new Date(),
-                ...(dto.userId && isValidObjectId(dto.userId)
-                  ? { closedBy: new Types.ObjectId(dto.userId) }
-                  : {}),
+                ...(operatedBy ? { closedBy: operatedBy } : {}),
               },
             },
+            { session: s },
           );
         }
-      } catch (e) {
-        this.logger.error(`issueFromPlace tx failed: ${e?.message || e}`);
-        return { msg: 'Issue Item Failed.......', status: false };
-      }
 
-      return { msg: 'Issue From Place Completed.......', status: true };
+        return { msg: 'Issue From Place Completed.......', status: true };
+      };
+
+      try {
+        let out: any;
+        await session.withTransaction(async () => {
+          out = await run(true);
+        });
+        return out ?? fail();
+      } catch (txErr) {
+        // fallback without transaction (single node)
+        this.logger?.warn?.(
+          `issueFromPlace tx unavailable, falling back: ${txErr?.message || txErr}`,
+        );
+        return await run(false);
+      } finally {
+        await session.endSession();
+      }
     } catch (e) {
-      this.logger.error(`issueFromPlace outer failed: ${e?.message || e}`);
+      this.logger?.error?.(`issueFromPlace failed: ${e?.message || e}`);
       return { msg: 'Issue Item Failed.......', status: false };
     }
   }
@@ -1136,98 +1206,144 @@ export class IssueService {
 
   async returnToStock(dto: any) {
     try {
-      // --------- 1) Validate shape & ObjectId format ----------
       const userIdRaw = String(dto?.userId ?? '').trim();
       const itemIdRaw = String(dto?.itemid ?? dto?.itemId ?? '').trim();
-      const placeIdRaw = String(dto?.placeId ?? '').trim();
+      const destPlaceIdRaw = String(dto?.placeId ?? '').trim();
       const issueIdRaw = String(dto?.issueId ?? '').trim();
-      const qty = Number(dto?.quantity ?? dto?.qty ?? 0);
+      const qtyTotal = Number(dto?.quantity ?? dto?.qty ?? 0);
 
       if (
         !isValidObjectId(itemIdRaw) ||
-        !isValidObjectId(placeIdRaw) ||
+        !isValidObjectId(destPlaceIdRaw) ||
         !isValidObjectId(issueIdRaw) ||
-        !Number.isInteger(qty) ||
-        qty <= 0
+        !Number.isInteger(qtyTotal) ||
+        qtyTotal <= 0
       ) {
         return { msg: 'Return Item Failed.......', status: false };
       }
       if (userIdRaw && !isValidObjectId(userIdRaw)) {
-        // userId is optional, but if provided must be valid
         return { msg: 'Return Item Failed.......', status: false };
       }
 
       const itemId = new Types.ObjectId(itemIdRaw);
-      const placeId = new Types.ObjectId(placeIdRaw);
+      const destPlaceId = new Types.ObjectId(destPlaceIdRaw);
       const issueId = new Types.ObjectId(issueIdRaw);
       const opUser = userIdRaw ? new Types.ObjectId(userIdRaw) : undefined;
 
-      // --------- 2) Existence checks (IDs must exist) ----------
-      const [issueDoc, itemDoc, placeDoc] = await Promise.all([
+      const [issueDoc, itemDoc, destPlaceDoc] = await Promise.all([
         this.issModel.findById(issueId).lean(),
         this.itemModel.findById(itemId).lean(),
-        this.placeModel.findById(placeId).lean(),
+        this.placeModel.findById(destPlaceId).lean(),
       ]);
-      if (!issueDoc || !itemDoc || !placeDoc) {
+
+      if (!issueDoc || !itemDoc || !destPlaceDoc) {
         return { msg: 'Return Item Failed.......', status: false };
       }
 
-      // --------- 3) Item must be on this Issue; check issued qty ----------
-      const lineIndex = (issueDoc.lines ?? []).findIndex(
-        (l: any) => String(l.itemId) === String(itemId),
-      );
-      if (lineIndex < 0) {
-        // returning an item that was never issued on this Issue
-        return { msg: 'Return Item Failed.......', status: false };
+      if (itemDoc.isBag) {
+        return { msg: 'The bag can`t be returned.', status: false };
       }
+
+      const itemHex = itemId.toHexString();
+      const destPlaceHex = destPlaceId.toHexString();
+
+      // Issue line
+      const lineIndex = (issueDoc.lines ?? []).findIndex(
+        (l: any) => new Types.ObjectId(l.itemId).toHexString() === itemHex,
+      );
+      if (lineIndex < 0)
+        return { msg: 'Return Item Failed.......', status: false };
+
       const line = issueDoc.lines[lineIndex];
       const issuedSoFar = Number(line.issuedQty ?? 0);
       const returnSoFar = Number(line.returnQty ?? 0);
-      const checkissue = Number(line.issuedQty ?? 0) - qty;
-      if (qty > issuedSoFar) {
-        // cannot return more than issued
+
+      if (qtyTotal > issuedSoFar) {
         return { msg: 'Return Item Failed.......', status: false };
       }
 
-      if (0 > checkissue) {
-        // cannot return more than issued
-        return { msg: 'Return Item Failed.......', status: false };
-      }
-
-      // --------- 4) Per-place check (SPIQ) : IssuedQuantity must have enough to subtract ----------
-      const itemHex = itemId.toHexString();
-      const placeHex = placeId.toHexString();
-      const spiq = await this.spiqModel
-        .findOne({ itemId: itemHex, placeId: placeHex })
-        .lean();
-      if (!spiq) {
-        // If there is no place stock record, there is nothing to "return" from this place
-        return { msg: 'Return Item Failed.......', status: false };
-      }
-      const spiqIssued = this.toInt(spiq.IssuedQuantity);
-
-      // console.log(qty);
-      // console.log(spiqIssued);
-
-      if (qty >= spiqIssued) {
-        // cannot lower IssuedQuantity below 0
-        return { msg: 'Return Item Failed.......', status: false };
-      }
-
-      // --------- 5) StoreItem guard: stockissueCompleted must be >= qty ----------
+      // StoreItem guard
       const sic = Number(itemDoc.stockissueCompleted ?? 0);
-      if (sic <= qty) {
-        // cannot make stockissueCompleted negative
+      if (sic < qtyTotal) {
         return { msg: 'Return Item Failed.......', status: false };
       }
 
-      // ---------- 6) Apply updates atomically (recommended to use a session/transaction) ----------
-      // const session = await this.conn.startSession();
-      // session.startTransaction();
+      // ✅ Build allocations from your data: allocations[].placeId (NOT fromPlaceId)
+      const allocsRaw: any[] = Array.isArray(issueDoc.allocations)
+        ? issueDoc.allocations
+        : [];
+
+      const allocs = allocsRaw
+        .filter((a: any) => {
+          const aItem = String(a.itemId ?? '');
+          return (
+            isValidObjectId(aItem) &&
+            new Types.ObjectId(aItem).toHexString() === itemHex
+          );
+        })
+        .map((a: any) => {
+          const placeStr = String(a.placeId ?? a.fromPlaceId ?? ''); // supports both names
+          if (!isValidObjectId(placeStr)) return null;
+
+          const qty = Number(a.qty ?? 0);
+          const ret = Number(a.returnedQty ?? 0);
+          const remaining = qty - ret;
+
+          const issuedAt = new Date(a.issuedAt ?? 0);
+          const issuedAtMs = isNaN(issuedAt.getTime()) ? 0 : issuedAt.getTime();
+
+          return {
+            placeId: new Types.ObjectId(placeStr),
+            placeHex: new Types.ObjectId(placeStr).toHexString(),
+            remaining,
+            qtyOriginal: qty,
+            issuedAt, // keep Date for update filter
+            issuedAtMs, // for sort
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => !!x && x.remaining > 0)
+        .sort((a, b) => a.issuedAtMs - b.issuedAtMs);
+
+      if (allocs.length === 0) {
+        // Without allocations we cannot know which place to deduct IssuedQuantity from
+        return {
+          msg: 'Return Item Failed....... (no allocations found)',
+          status: false,
+        };
+      }
+
+      // Split qty across allocations FIFO
+      let left = qtyTotal;
+      const chunks: Array<{
+        srcPlaceId: Types.ObjectId;
+        srcPlaceHex: string;
+        take: number;
+        issuedAt: Date;
+        qtyOriginal: number;
+      }> = [];
+
+      for (const a of allocs) {
+        if (left <= 0) break;
+        const take = Math.min(a.remaining, left);
+        chunks.push({
+          srcPlaceId: a.placeId,
+          srcPlaceHex: a.placeHex,
+          take,
+          issuedAt: a.issuedAt,
+          qtyOriginal: a.qtyOriginal,
+        });
+        left -= take;
+      }
+
+      if (left > 0) {
+        return { msg: 'Return Item Failed.......', status: false };
+      }
+
       try {
-        // (a) Decrease issue line's issuedQty (cannot go below 0)
-        const newIssuedQty = issuedSoFar - qty;
-        const newReturnQty = returnSoFar + qty;
+        // (a) Update issue line
+        const newIssuedQty = issuedSoFar - qtyTotal;
+        const newReturnQty = returnSoFar + qtyTotal;
+
         const resIssue = await this.issModel.updateOne(
           { _id: issueId },
           {
@@ -1236,97 +1352,118 @@ export class IssueService {
               [`lines.${lineIndex}.returnQty`]: newReturnQty,
             },
           },
-          // { session }
         );
-        if (resIssue.matchedCount !== 1) {
+        if (resIssue.matchedCount !== 1)
           throw new Error('Failed to update issue line');
-        }
 
-        // (b) StoreItem counters:
-        //     - stockAvailableQuantity += qty   (back to available)
-        //     - stockissueCompleted    -= qty   (we are undoing a completion)
+        // (b) Update StoreItem
         const resItem = await this.itemModel.updateOne(
-          {
-            _id: itemId,
-            stockissueCompleted: { $gte: qty }, // guard: never go negative
-          },
+          { _id: itemId, stockissueCompleted: { $gte: qtyTotal } },
           {
             $inc: {
-              stockAvailableQuantity: +qty,
-              stockissueCompleted: -qty,
+              stockAvailableQuantity: +qtyTotal,
+              stockissueCompleted: -qtyTotal,
             },
           },
-          // { session }
         );
         if (resItem.matchedCount !== 1 || resItem.modifiedCount !== 1) {
           throw new Error('StoreItem counters would go negative');
         }
 
-        // (c) SPIQ: decrease IssuedQuantity by qty (string counters)
-        const spiqDoc = await this.spiqModel.findOne({
-          itemId: itemHex,
-          placeId: placeHex,
-        }); // .session(session)
-        if (!spiqDoc) {
-          throw new Error('Place stock not found when updating SPIQ');
+        // (c) Deduct issued from actual SOURCE places (from allocations)
+        for (const c of chunks) {
+          // 1) Update allocation returnedQty (match by itemId + placeId + issuedAt + qty)
+          await this.issModel.updateOne(
+            { _id: issueId },
+            { $inc: { 'allocations.$[al].returnedQty': c.take } },
+            {
+              arrayFilters: [
+                {
+                  'al.itemId': itemId,
+                  'al.placeId': c.srcPlaceId,
+                  'al.issuedAt': c.issuedAt,
+                  'al.qty': c.qtyOriginal,
+                },
+              ],
+            },
+          );
+
+          // 2) Source SPIQ must exist for the issued place
+          const srcSpiq = await this.findSpiqAny(itemId, c.srcPlaceId);
+          if (!srcSpiq) {
+            throw new Error(
+              `Source SPIQ not found for return deduction (item=${itemHex}, place=${c.srcPlaceHex})`,
+            );
+          }
+
+          const curIssued = this.toInt(srcSpiq.IssuedQuantity);
+          if (curIssued < c.take) {
+            throw new Error('Source IssuedQuantity would go negative');
+          }
+
+          // ✅ Only reduce IssuedQuantity at SOURCE (do NOT reduce totalQuantity)
+          srcSpiq.IssuedQuantity = this.toStr(curIssued - c.take);
+          await srcSpiq.save();
         }
-        const curIssued = this.toInt(spiqDoc.IssuedQuantity);
-        const curtotalQty = this.toInt(spiqDoc.totalQuantity);
-        if (curIssued < qty) {
-          throw new Error('SPIQ.IssuedQuantity would go negative');
+
+        // (d) Destination SPIQ: create if missing, then add qty to total
+        let destSpiq = await this.findSpiqAny(itemId, destPlaceId);
+        if (!destSpiq) {
+          destSpiq = await this.spiqModel.create({
+            itemId: itemHex,
+            itemName: String(itemDoc.name ?? ''),
+            placeId: destPlaceHex,
+            placeName: String(destPlaceDoc.name ?? ''),
+            totalQuantity: '0',
+            IssuedQuantity: '0',
+            completedQuantity: '0',
+            remark: dto.remark ?? '',
+            createdBy: dto.createdBy ?? '',
+          });
         }
-        spiqDoc.IssuedQuantity = this.toStr(curIssued - qty);
-        // spiqDoc.totalQuantity = this.toStr(curtotalQty + qty);
-        await spiqDoc.save(); // { session }
 
-        // (d) Movement: RETURN
-        await this.movModel.create(
-          {
-            itemId,
-            placeId,
-            issueId,
-            type: 'RETURN',
-            qty,
-            refNo: String(issueDoc.issNo ?? ''),
-            operatedBy: opUser ?? new Types.ObjectId(issueDoc.createdBy),
-            note: 'Return to stock (completed → available)',
-          },
-          // { session }
-        );
+        const destTotal = this.toInt(destSpiq.totalQuantity);
+        destSpiq.totalQuantity = this.toStr(destTotal + qtyTotal);
+        await destSpiq.save();
 
-        // (e) If the Issue was CLOSED but now no longer fully issued, reopen to APPROVED
-        // const fresh = await this.issModel.findById(issueId).lean(); // .session(session)
-        // const stillFullyIssued = (fresh?.lines ?? []).every(
-        //   (l: any) => Number(l.issuedQty ?? 0) >= Number(l.approvedQty ?? 0),
-        // );
-        // if (!stillFullyIssued && fresh?.status === 'CLOSED') {
-        //   await this.issModel.updateOne(
-        //     { _id: issueId },
-        //     {
-        //       $set: {
-        //         status: 'APPROVED',
-        //         closedAt: undefined,
-        //         closedBy: undefined,
-        //       },
-        //     },
-        //     // { session }
-        //   );
-        // }
+        // (e) Movement
+        const srcPlacesNote = chunks
+          .map((c) => `${c.srcPlaceHex}:${c.take}`)
+          .join(', ');
+        await this.movModel.create({
+          itemId,
+          placeId: destPlaceId,
+          issueId,
+          type: 'RETURN',
+          qty: qtyTotal,
+          refNo: String(issueDoc.issNo ?? ''),
+          operatedBy: opUser ?? new Types.ObjectId(issueDoc.createdBy),
+          note: `Return to place. Deduct issued FIFO from sources=${srcPlacesNote}`,
+        });
 
-        // await session.commitTransaction();
-      } catch (e) {
-        // await session.abortTransaction();
+        return { msg: 'Return Completed.......', status: true };
+      } catch (e: any) {
         this.logger.error(`returnToStock tx failed: ${e?.message || e}`);
         return { msg: 'Return Item Failed.......', status: false };
-      } finally {
-        // session.endSession();
       }
-
-      return { msg: 'Return Completed.......', status: true };
-    } catch (e) {
+    } catch (e: any) {
       this.logger.error(`returnToStock failed: ${e?.message || e}`);
       return { msg: 'Return Item Failed.......', status: false };
     }
+  }
+
+  private async findSpiqAny(itemId: Types.ObjectId, placeId: Types.ObjectId) {
+    const itemHex = itemId.toHexString();
+    const placeHex = placeId.toHexString();
+
+    return this.spiqModel.findOne({
+      $or: [
+        { itemId: itemHex, placeId: placeHex },
+        { itemId: itemId, placeId: placeId },
+        { itemId: itemHex, placeId: placeId },
+        { itemId: itemId, placeId: placeHex },
+      ],
+    });
   }
 
   // Close an APPROVED Issue by releasing all remaining (approvedQty) back to stock.
