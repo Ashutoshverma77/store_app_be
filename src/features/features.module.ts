@@ -12,6 +12,7 @@ import { ItemsModule } from './items/items.module';
 import { SortingJobModule } from './sorting-job/sorting-job.module';
 import { GradeModule } from './grade/grade.module';
 import { ActivityModule } from './activity/activity.module';
+import { NewStoreModule } from './new-store/new-store.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ActivityModule } from './activity/activity.module';
     SortingJobModule,
     GradeModule,
     ActivityModule,
+    NewStoreModule,
   ],
 })
 export class FeaturesModule {}
