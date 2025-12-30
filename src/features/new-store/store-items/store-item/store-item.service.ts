@@ -1,40 +1,99 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, SortOrder, Types } from 'mongoose';
+// ✅ Stock Stock Track (renamed from StockMovement)
+
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { StoreNewItem } from './entities/store-item.schema';
+import {
+  ClientSession,
+  Connection,
+  FilterQuery,
+  Model,
+  SortOrder,
+  Types,
+} from 'mongoose';
 import { StoreItemName } from '../store-item-name/entities/store-item-name.schema';
 import { StoreCategory } from '../store-category/entities/store-category.schema';
 import { Rack } from '../../locations/rack/entities/rack.schema';
+import { StoreReceive } from './entities/store-receive.schema';
+import {
+  StockTrack,
+  StockTrackDocument,
+  StockTrackType,
+} from './entities/stock-track.schema';
 import {
   CreateItemDto,
   ItemPagedQueryDto,
   UpdateItemDto,
 } from './dto/store-item.dto';
+import { v4 as uuid } from 'uuid';
+import { UserService } from 'src/features/user/user.service';
+import { minioClient } from 'src/config/minio.config';
+import { CounterService } from '../../common/code-gen.service';
 
 @Injectable()
-export class StoreItemService {
+export class StoreNewItemService {
+  private readonly bucketName = process.env.MINIO_BUCKET || 'auth';
   constructor(
     @InjectModel(StoreNewItem.name, 'store')
     private readonly model: Model<StoreNewItem>,
+
     @InjectModel(StoreItemName.name, 'store')
     private readonly itemNameModel: Model<StoreItemName>,
+
     @InjectModel(StoreCategory.name, 'store')
     private readonly catModel: Model<StoreCategory>,
-    @InjectModel(Rack.name, 'store') private readonly rackModel: Model<Rack>,
+
+    @InjectModel(Rack.name, 'store')
+    private readonly rackModel: Model<Rack>,
+
+    @InjectModel(StoreReceive.name, 'store')
+    private readonly receiveModel: Model<StoreReceive>,
+
+    // ✅ Track Model
+    @InjectModel(StockTrack.name, 'store')
+    private readonly trackModel: Model<StockTrackDocument>,
+
+    // ✅ Transaction connection
+    @InjectConnection('store')
+    private readonly conn: Connection,
+
+    private readonly userService: UserService,
+
+    private readonly seq: CounterService,
   ) {}
+
+  /* -------------------- helpers -------------------- */
 
   private sortObj(sort?: string): Record<string, SortOrder> {
     const s = (sort || '-createdAt').trim();
     const desc = s.startsWith('-');
-    const field = desc ? s.slice(1) : s;
-    return { [field]: desc ? -1 : 1 };
+    const field = (desc ? s.slice(1) : s) || 'createdAt';
+    return { [field]: (desc ? -1 : 1) as SortOrder } as Record<
+      string,
+      SortOrder
+    >;
   }
 
   private oid(id: string) {
     if (!id || !Types.ObjectId.isValid(id)) {
-      throw new Error(`Invalid ObjectId: ${id}`);
+      throw new BadRequestException(`Invalid ObjectId: ${id}`);
     }
     return new Types.ObjectId(id);
+  }
+
+  private oidOrNull(id?: string | null) {
+    const v = String(id ?? '').trim();
+    return v && Types.ObjectId.isValid(v) ? new Types.ObjectId(v) : null;
+  }
+
+  private mustOperatorId(id?: string | null, label = 'operatedBy') {
+    const op = this.oidOrNull(id);
+    if (!op) throw new BadRequestException(`${label} missing/invalid`);
+    return op;
   }
 
   private async buildCategoryLabel(
@@ -49,106 +108,420 @@ export class StoreItemService {
     return parent ? `${parent.name} > ${node.name}` : node.name;
   }
 
+  private async track(
+    // session: ClientSession,///////
+    input: {
+      type: StockTrackType;
+      qty: number;
+      operatedBy: string;
+
+      itemId?: string;
+      categoryId?: string;
+      rackId?: string;
+
+      receivingId?: string;
+      issueId?: string;
+
+      refNo?: string;
+      note?: string;
+    },
+  ) {
+    await this.trackModel.create(
+      [
+        {
+          type: input.type,
+          qty: Number(input.qty || 0),
+
+          refNo: input.refNo ?? '',
+          note: input.note ?? '',
+
+          operatedBy: input.operatedBy,
+
+          itemId: input.itemId ?? null,
+          categoryId: input.categoryId ?? null,
+          rackId: input.rackId ?? null,
+
+          receivingId: input.receivingId ?? null,
+          issueId: input.issueId ?? null,
+        },
+      ],
+      // { session },
+    );
+  }
+
+  private hasAnyQty(item: any) {
+    return (
+      (Number(item.totalStockQuantity) || 0) > 0 ||
+      (Number(item.stockAvailableQuantity) || 0) > 0 ||
+      (Number(item.stockIssueQuantity) || 0) > 0 ||
+      (Number(item.stockissueCompleted) || 0) > 0 ||
+      (Number(item.stockscrapQuantity) || 0) > 0
+    );
+  }
+  sanitizePrefix(p: string) {
+    return p
+      .replace(/[^a-zA-Z0-9/_-]/g, '')
+      .replace(/^\/*/, '')
+      .replace(/\/*$/, '');
+  }
+  decodeDataUrlToBuffer(dataUrl: string) {
+    const m = /^data:(image\/[a-zA-Z0-9+.\-]+);base64,/.exec(dataUrl);
+    const mime = m?.[1];
+    if (!mime) throw new BadRequestException('Invalid data URL');
+
+    const raw = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const clean = raw.replace(/\s/g, '');
+    const buffer = Buffer.from(clean, 'base64');
+
+    const ext =
+      mime.includes('jpeg') || mime.includes('jpg')
+        ? '.jpg'
+        : mime.includes('webp')
+          ? '.webp'
+          : '.png';
+
+    return { buffer, mime, ext };
+  }
+
+  async uploadImageBase64(
+    identity: 'item' | 'user',
+    id: string,
+    base64Data: string,
+    prefix: string,
+  ) {
+    const { buffer, mime, ext } = this.decodeDataUrlToBuffer(base64Data);
+    const key = `${this.sanitizePrefix(prefix)}/${id}/${uuid()}${ext}`;
+
+    // Resolve entity first (declare vars in outer scope)
+    let entity: any;
+    if (identity === 'item') {
+      entity = await this.model.findById(id);
+      if (!entity) throw new NotFoundException('StoreItem not found');
+    } else if (identity === 'user') {
+      entity = await this.userService.findById(id);
+      if (!entity) throw new NotFoundException('User not found');
+    } else {
+      throw new BadRequestException('Invalid identity');
+    }
+
+    await minioClient.putObject(this.bucketName, key, buffer, {
+      'Content-Type': mime,
+    });
+
+    const imageUrl = `https://minioimg.rrispat.in/${this.bucketName}/${key}`;
+    entity.imageUrl = imageUrl;
+    await entity.save();
+
+    // Return a consistent shape
+    return { imageUrl, entity };
+  }
+
+  /* -------------------- CRUD -------------------- */
+
   async create(dto: CreateItemDto) {
+    const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
+
     const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
     const rack = await this.rackModel.findById(dto.rackId).lean();
 
-    if (!itemName) throw new Error('ItemName not found');
-    if (!rack) throw new Error('Rack not found');
-
-    const categoryLabel = await this.buildCategoryLabel(dto.categoryId ?? null);
-
-    const created = await this.model.create({
-      itemNameId: this.oid(dto.itemNameId),
-      itemName: itemName.name,
-      itemNameCode: itemName.code,
-
-      rackId: this.oid(dto.rackId),
-      rackName: (rack as any).name ?? '',
-
-      categoryId: dto.categoryId ? this.oid(dto.categoryId) : null,
-      categoryLabel,
-
-      unit: dto.unit ?? '',
-      description: dto.description ?? '',
-
-      totalStockQuantity: 0,
-      stockAvailableQuantity: 0,
-      stockIssueQuantity: 0,
-      stockissueCompleted: 0,
-      stockscrapQuantity: 0,
-
-      imageUrl: dto.imageUrl ?? '',
-      createdBy: dto.createdBy ?? '',
-    });
-
+    if (!itemName) throw new BadRequestException('ItemName not found');
+    if (!rack) throw new BadRequestException('Rack not found');
+    var categorycheck =
+      dto.subCategoryId == null ? dto.categoryId : dto.subCategoryId;
+    const categoryLabel = await this.buildCategoryLabel(categorycheck ?? null);
+    const { code } = await this.seq.nextCode('itemname', 'IT');
+    // const session = await
     try {
-      await this.occupyRackIfFree(dto.rackId, String(created._id));
-    } catch (e) {
-      // rollback item if rack allocation failed
-      await this.model.deleteOne({ _id: created._id });
-      throw e;
-    }
+      let createdObj: any;
 
-    return created.toObject();
+      // await session.withTransaction(async () => {
+      const created = await this.model.create(
+        [
+          {
+            itemNameId: this.oid(dto.itemNameId),
+            itemName: itemName.name,
+            itemNameCode: itemName.code,
+            itemCode: code,
+
+            rackId: this.oid(dto.rackId),
+            rackName: (rack as any).name ?? '',
+
+            categoryId: categorycheck ? this.oid(categorycheck) : null,
+            categoryLabel,
+
+            unit: dto.unit ?? '',
+            description: dto.description ?? '',
+
+            totalStockQuantity: 0,
+            stockAvailableQuantity: 0,
+            stockIssueQuantity: 0,
+            stockissueCompleted: 0,
+            stockscrapQuantity: 0,
+
+            imageUrl: dto.imageUrl ?? '',
+            createdBy: dto.createdBy ?? '',
+          },
+        ],
+        // { session },
+      );
+
+      const createdDoc = created?.[0];
+      if (!createdDoc) throw new BadRequestException('Create failed');
+
+      // ✅ occupy rack (must remain consistent with item creation)
+      await this.occupyRackIfFree(dto.rackId, String(createdDoc._id));
+
+      // ✅ track: CREATE (qty=0)
+      await this.track({
+        type: 'CREATE',
+        qty: 0,
+        operatedBy: String(operatedBy),
+        itemId: String(createdDoc._id),
+        categoryId: String(createdDoc.categoryId) ?? '',
+        rackId: String(createdDoc.rackId) ?? '',
+        refNo: String(createdDoc.itemNameCode ?? ''),
+        note: `Item created: ${String(createdDoc.itemName ?? '')} (${String(
+          createdDoc.itemNameCode ?? '',
+        )})`,
+      });
+
+      createdObj = createdDoc.toObject();
+      // });
+
+      return createdObj;
+    } catch (e) {
+      throw e;
+    } finally {
+      // await session.endSession();
+    }
   }
 
   async update(dto: UpdateItemDto) {
-    const patch: any = {};
+    const operatedBy = this.mustOperatorId(dto.createdBy, 'updatedBy');
 
-    if (dto.itemNameId != null) {
-      const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
-      if (!itemName) throw new Error('ItemName not found');
-      patch.itemNameId = this.oid(dto.itemNameId);
-      patch.itemName = itemName.name;
-      patch.itemNameCode = itemName.code;
+    // const session = await
+    try {
+      let updated: any;
+
+      // await session.withTransaction(async () => {
+      const patch: any = {};
+
+      if (dto.itemNameId != null) {
+        const itemName = await this.itemNameModel
+          .findById(dto.itemNameId)
+          .lean();
+        if (!itemName) throw new BadRequestException('ItemName not found');
+        patch.itemNameId = this.oid(dto.itemNameId);
+        patch.itemName = itemName.name;
+        patch.itemNameCode = itemName.code;
+      }
+
+      if (dto.rackId != null) {
+        const rack = await this.rackModel.findById(dto.rackId).lean();
+        if (!rack) throw new BadRequestException('Rack not found');
+        patch.rackId = this.oid(dto.rackId);
+        patch.rackName = (rack as any).name ?? '';
+      }
+
+      if (dto.categoryId !== undefined) {
+        patch.categoryId = dto.categoryId ? this.oid(dto.categoryId) : null;
+        patch.categoryLabel = await this.buildCategoryLabel(
+          dto.categoryId ?? null,
+        );
+      }
+
+      if (dto.unit != null) patch.unit = dto.unit;
+      if (dto.description != null) patch.description = dto.description;
+      if (dto.imageUrl != null) patch.imageUrl = dto.imageUrl;
+
+      const prev = await this.model.findById(this.oid(dto.id));
+      // .session(session);
+      if (!prev) throw new BadRequestException('Item not found');
+
+      // ✅ if rack change: occupy new rack then update then release old rack
+      const fromRackId = prev.rackId ? String(prev.rackId) : null;
+      const toRackId = dto.rackId ? String(dto.rackId) : null;
+
+      if (toRackId && fromRackId && fromRackId !== toRackId) {
+        await this.occupyRackIfFree(toRackId, String(prev._id));
+      }
+
+      updated = await this.model
+        .findByIdAndUpdate(dto.id, { $set: patch }, { new: true })
+        .lean();
+
+      if (!updated) throw new BadRequestException('Update failed');
+
+      if (toRackId && fromRackId && fromRackId !== toRackId) {
+        const released = await this.releaseRackForItem(
+          fromRackId,
+          String(prev._id),
+          // session,
+        );
+        if (!released) {
+          throw new BadRequestException(
+            'Old rack release failed (data mismatch)',
+          );
+        }
+      }
+
+      // ✅ track: EDIT (qty=0)
+      await this.track({
+        type: 'EDIT',
+        qty: 0,
+        operatedBy: String(operatedBy),
+        itemId: String(updated._id),
+        categoryId: updated.categoryId ? String(updated.categoryId) : '',
+        rackId: updated.rackId ? String(updated.rackId) : '',
+        refNo: String(updated.itemNameCode ?? ''),
+        note: `Item updated: ${String(updated.itemName ?? '')} (${String(
+          updated.itemNameCode ?? '',
+        )})`,
+      });
+      // });
+
+      return updated;
+    } finally {
+      // await session.endSession();
     }
+  }
 
-    if (dto.rackId != null) {
-      const rack = await this.rackModel.findById(dto.rackId).lean();
-      if (!rack) throw new Error('Rack not found');
-      patch.rackId = this.oid(dto.rackId);
-      patch.rackName = (rack as any).name ?? '';
+  async delete(id: string, deletedBy?: string) {
+    // const session = await
+    try {
+      let ok = false;
+
+      // await session.withTransaction(async () => {
+      const item = await this.model.findById(this.oid(id));
+      if (!item) throw new BadRequestException('Item not found');
+
+      if (this.hasAnyQty(item)) {
+        throw new BadRequestException(
+          'Cannot delete item: quantity is not zero',
+        );
+      }
+
+      const operatedBy =
+        this.oidOrNull(deletedBy) ??
+        this.oidOrNull(String((item as any).createdBy ?? ''));
+
+      if (!operatedBy) {
+        // Keep compatibility: allow delete, but you SHOULD pass deletedBy for full audit.
+        // If you want strict mode, replace with throw.
+      }
+
+      const rackId = item.rackId ? String(item.rackId) : null;
+
+      await this.model.deleteOne({ _id: item._id });
+      // .session(session);
+
+      if (rackId) {
+        await this.releaseRackForItem(rackId, String(item._id));
+      }
+
+      if (operatedBy) {
+        await this.track({
+          type: 'CANCELLED',
+          qty: 0,
+          operatedBy: String(operatedBy),
+          itemId: String(item._id),
+          categoryId: item.categoryId ?? '',
+          rackId: item.rackId ?? '',
+          refNo: String((item as any).itemNameCode ?? ''),
+          note: `Item deleted: ${String((item as any).itemName ?? '')} (${String(
+            (item as any).itemNameCode ?? '',
+          )})`,
+        });
+      }
+
+      ok = true;
+      // });
+
+      return ok;
+    } finally {
+      // await session.endSession();
     }
+  }
 
-    if (dto.categoryId !== undefined) {
-      patch.categoryId = dto.categoryId ? this.oid(dto.categoryId) : null;
-      patch.categoryLabel = await this.buildCategoryLabel(
-        dto.categoryId ?? null,
+  /* -------------------- Receive Stock (updates stock + receipt + track) -------------------- */
+
+  async receiveItem(dto: {
+    itemId: string;
+    qty: number;
+    receivedBy: string;
+    remark?: string;
+  }) {
+    const itemId = String(dto.itemId || '').trim();
+    const qty = Number(dto.qty || 0);
+    const receivedBy = String(dto.receivedBy || '').trim();
+
+    if (!itemId) throw new BadRequestException('itemId required');
+    if (!receivedBy) throw new BadRequestException('receivedBy required');
+    if (!Number.isFinite(qty) || qty <= 0)
+      throw new BadRequestException('qty must be > 0');
+
+    const operatedBy = this.mustOperatorId(receivedBy, 'receivedBy');
+
+    // const session = await
+    try {
+      // await session.withTransaction(async () => {
+      const item = await this.model.findById(this.oid(itemId));
+      // .session(session);
+      if (!item) throw new BadRequestException('Item not found');
+
+      // 1) update stock
+      await this.model.updateOne(
+        { _id: item._id },
+        {
+          $inc: {
+            totalStockQuantity: qty,
+            stockAvailableQuantity: qty,
+          },
+        },
+        // { session },
       );
+
+      // 2) create receipt
+      const receipt = await this.receiveModel.create(
+        [
+          {
+            receivedBy,
+            remark: dto.remark ?? '',
+            lines: [
+              {
+                itemId: item._id,
+                rackId: item.rackId ? this.oid(String(item.rackId)) : null,
+                qty,
+              },
+            ],
+          },
+        ],
+        // { session },
+      );
+
+      const receivingDoc = receipt?.[0];
+
+      // 3) track RECEIVE (+qty)
+      await this.track({
+        type: 'RECEIVE',
+        qty: +qty,
+        operatedBy: String(operatedBy),
+        itemId: String(item._id),
+        categoryId: item.categoryId ?? '',
+        rackId: item.rackId ?? '',
+        receivingId: String(receivingDoc?._id) ?? '',
+        refNo: receivingDoc ? String(receivingDoc._id) : '',
+        note: `Receive: +${qty}`,
+      });
+      // });
+
+      return true;
+    } finally {
+      // await session.endSession();
     }
-
-    if (dto.unit != null) patch.unit = dto.unit;
-    if (dto.description != null) patch.description = dto.description;
-    if (dto.imageUrl != null) patch.imageUrl = dto.imageUrl;
-
-    const updated = await this.model
-      .findByIdAndUpdate(dto.id, { $set: patch }, { new: true })
-      .lean();
-    return updated;
   }
-  async delete(id: string) {
-    const item = await this.model.findById(this.oid(id)).lean();
-    if (!item) throw new BadRequestException('Item not found');
 
-    // ✅ rule: only delete if all qty are 0
-    if (this.hasAnyQty(item)) {
-      throw new BadRequestException('Cannot delete item: quantity is not zero');
-    }
-
-    const rackId = item.rackId ? String(item.rackId) : null;
-
-    // ✅ delete item first
-    await this.model.deleteOne({ _id: this.oid(id) });
-
-    // ✅ release rack (only if it really belonged to this item)
-    if (rackId) {
-      await this.releaseRackForItem(rackId, id);
-      // if release fails, we ignore (data mismatch) OR you can throw
-    }
-
-    return true;
-  }
+  /* -------------------- Reads -------------------- */
 
   async findAllPaged(q: ItemPagedQueryDto) {
     const page = Math.max(1, Number(q.page || 1));
@@ -187,46 +560,20 @@ export class StoreItemService {
     return this.model.findById(id).lean();
   }
 
-  // async changeItemRack(itemId: string, toRackId: string) {
-  //   const item = await this.model.findById(this.oid(itemId)).lean();
-  //   if (!item) throw new Error('Item not found');
+  /* -------------------- Rack Occupancy + Transfers -------------------- */
 
-  //   const fromRackId = item.rackId ? String(item.rackId) : null;
-  //   if (fromRackId && fromRackId === toRackId) return true;
-
-  //   // 1) occupy new rack (must be free)
-  //   await this.occupyRackIfFree(toRackId, itemId);
-
-  //   // 2) update item -> new rack
-  //   await this.model.updateOne(
-  //     { _id: this.oid(itemId) },
-  //     { $set: { rackId: this.oid(toRackId) } },
-  //   );
-
-  //   // 3) release old rack (only if it belonged to this item)
-  //   if (fromRackId) {
-  //     const released = await this.releaseRackForItem(fromRackId, itemId);
-  //     if (!released) {
-  //       // rollback: free the new rack if release fails
-  //       await this.rackModel.updateOne(
-  //         { _id: this.oid(toRackId), itemId: this.oid(itemId) },
-  //         { $set: { isOccupied: false, itemId: null } },
-  //       );
-  //       throw new Error('Old rack release failed (data mismatch)');
-  //     }
-  //   }
-
-  //   return true;
-  // }
-
-  async transferItemToRack(itemId: string, toRackId: string) {
+  async transferItemToRack(
+    itemId: string,
+    toRackId: string,
+    operatedBy?: string,
+  ) {
     const item = await this.model.findById(this.oid(itemId)).lean();
-    if (!item) throw new Error('Item not found');
+    if (!item) throw new BadRequestException('Item not found');
 
     const fromRackId = item.rackId ? String(item.rackId) : null;
-    if (!fromRackId) throw new Error('Item has no rack to transfer from');
+    if (!fromRackId)
+      throw new BadRequestException('Item has no rack to transfer from');
 
-    // ✅ rule: current rack must be occupied and assigned to same item
     const fromRack = await this.rackModel
       .findOne({
         _id: this.oid(fromRackId),
@@ -235,63 +582,15 @@ export class StoreItemService {
       })
       .lean();
 
-    if (!fromRack) throw new Error('Current rack is not occupied by this item');
+    if (!fromRack)
+      throw new BadRequestException(
+        'Current rack is not occupied by this item',
+      );
 
-    // then same flow: occupy new -> update item -> release old
-    return this.changeItemRack(itemId, toRackId);
+    return this.changeItemRack(itemId, toRackId, operatedBy);
   }
 
-  private async occupyRackIfFree(rackId: string, itemId: string) {
-    const rack = await this.rackModel.findOneAndUpdate(
-      {
-        _id: this.oid(rackId),
-        $or: [
-          { isOccupied: false },
-          { itemId: null },
-          { itemId: { $exists: false } },
-          { itemId: { $type: 'string' } }, // ✅ matches old "" safely
-        ],
-      },
-      {
-        $set: {
-          isOccupied: true,
-          itemId: this.oid(itemId),
-        },
-      },
-      { new: true },
-    );
-
-    if (!rack) throw new Error('Rack already occupied');
-    return rack;
-  }
-
-  // private async releaseRackForItem(rackId: string, itemId: string) {
-  //   // Only release if this rack really belongs to this item
-  //   const res = await this.rackModel.updateOne(
-  //     { _id: this.oid(rackId), itemId: this.oid(itemId) },
-  //     { $set: { isOccupied: false, itemId: null } },
-  //   );
-  //   return res.modifiedCount > 0;
-  // }
-
-  // private oid(id?: string) {
-  //   if (!id) return null;
-  //   if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid ObjectId');
-  //   return new Types.ObjectId(id);
-  // }
-
-  private hasAnyQty(item: any) {
-    return (
-      (Number(item.totalStockQuantity) || 0) > 0 ||
-      (Number(item.stockAvailableQuantity) || 0) > 0 ||
-      (Number(item.stockIssueQuantity) || 0) > 0 ||
-      (Number(item.stockissueCompleted) || 0) > 0 ||
-      (Number(item.stockscrapQuantity) || 0) > 0
-    );
-  }
-
-  /// ✅ for UI Transfer Rack (allowed only when qty==0)
-  async transferRack(itemId: string, toRackId: string) {
+  async transferRack(itemId: string, toRackId: string, operatedBy?: string) {
     const item = await this.model.findById(this.oid(itemId)).lean();
     if (!item) throw new BadRequestException('Item not found');
 
@@ -301,89 +600,124 @@ export class StoreItemService {
       );
     }
 
-    return this.changeItemRack(itemId, toRackId);
+    return this.changeItemRack(itemId, toRackId, operatedBy);
   }
 
-  /// ✅ Transfer Item quantity (Available qty)
-  /// UI requires destination rack MUST be from "same item racks" list
+  /// ✅ Transfer item qty between rack-mapped item docs (adjusts both docs)
   async transferItemQty(
     itemId: string,
     fromRackId: string,
     toRackId: string,
     qty: number,
+    operatedBy?: string,
   ) {
-    const item = await this.model.findById(this.oid(itemId)).lean();
-    if (!item) throw new BadRequestException('Item not found');
+    const op = this.oidOrNull(operatedBy); // optional, but recommended
+    // const session = await
 
-    const realFromRackId = item.rackId ? String(item.rackId) : null;
-    if (!realFromRackId) throw new BadRequestException('Item has no rack');
-    if (String(fromRackId) !== realFromRackId) {
-      throw new BadRequestException('fromRackId mismatch');
-    }
-    if (realFromRackId === toRackId) return true;
+    try {
+      // await session.withTransaction(async () => {
+      const item = await this.model.findById(this.oid(itemId));
+      // .session(session);
+      if (!item) throw new BadRequestException('Item not found');
 
-    const available = Number(item.stockAvailableQuantity) || 0;
-    if (qty <= 0 || qty > available) {
-      throw new BadRequestException(`Invalid qty. Must be 1..${available}`);
-    }
+      const realFromRackId = item.rackId ? String(item.rackId) : null;
+      if (!realFromRackId) throw new BadRequestException('Item has no rack');
+      if (String(fromRackId) !== realFromRackId) {
+        throw new BadRequestException('fromRackId mismatch');
+      }
+      if (realFromRackId === toRackId) return;
 
-    // destination item record: same itemNameId + toRackId
-    const dest = await this.model
-      .findOne({
+      const available = Number(item.stockAvailableQuantity) || 0;
+      if (qty <= 0 || qty > available) {
+        throw new BadRequestException(`Invalid qty. Must be 1..${available}`);
+      }
+
+      // destination item record: same itemNameId + toRackId
+      const dest = await this.model.findOne({
         itemNameId: item.itemNameId,
         rackId: this.oid(toRackId),
-      })
-      .lean();
+      });
+      // .session(session);
 
-    if (!dest) {
-      // strict mode (matches your UI: "fetch same item racks then transfer")
-      throw new BadRequestException(
-        'Destination rack is not mapped to the same item',
-      );
-    }
+      if (!dest) {
+        throw new BadRequestException(
+          'Destination rack is not mapped to the same item',
+        );
+      }
 
-    // ✅ ensure destination rack is occupied by destination item OR fix if empty
-    await this.occupyRackIfFreeOrOwned(toRackId, String(dest._id));
+      // ensure rack occupancy for destination mapping
+      await this.occupyRackIfFreeOrOwned(toRackId, String(dest._id));
 
-    // 1) decrement source (guarded)
-    const dec = await this.model.updateOne(
-      { _id: this.oid(itemId), stockAvailableQuantity: { $gte: qty } },
-      {
-        $inc: {
-          stockAvailableQuantity: -qty,
-          totalStockQuantity: -qty,
+      // 1) decrement source (guarded)
+      const dec = await this.model.updateOne(
+        { _id: item._id, stockAvailableQuantity: { $gte: qty } },
+        {
+          $inc: {
+            stockAvailableQuantity: -qty,
+            totalStockQuantity: -qty,
+          },
         },
-      },
-    );
-
-    if (dec.modifiedCount <= 0) {
-      throw new BadRequestException('Not enough available quantity');
-    }
-
-    // 2) increment destination
-    const inc = await this.model.updateOne(
-      { _id: this.oid(String(dest._id)) },
-      {
-        $inc: {
-          stockAvailableQuantity: qty,
-          totalStockQuantity: qty,
-        },
-      },
-    );
-
-    if (inc.modifiedCount <= 0) {
-      // rollback
-      await this.model.updateOne(
-        { _id: this.oid(itemId) },
-        { $inc: { stockAvailableQuantity: qty, totalStockQuantity: qty } },
+        // { session },
       );
-      throw new BadRequestException('Destination update failed');
-    }
 
-    return true;
+      if (dec.modifiedCount <= 0) {
+        throw new BadRequestException('Not enough available quantity');
+      }
+
+      // 2) increment destination
+      const inc = await this.model.updateOne(
+        { _id: dest._id },
+        {
+          $inc: {
+            stockAvailableQuantity: qty,
+            totalStockQuantity: qty,
+          },
+        },
+        // { session },
+      );
+
+      if (inc.modifiedCount <= 0) {
+        // rollback
+        await this.model.updateOne(
+          { _id: item._id },
+          { $inc: { stockAvailableQuantity: qty, totalStockQuantity: qty } },
+          // { session },
+        );
+        throw new BadRequestException('Destination update failed');
+      }
+
+      // ✅ track: ADJUST source (-qty) and destination (+qty)
+      // (only if operatedBy is provided; otherwise keep compatibility)
+      if (op) {
+        await this.track({
+          type: 'ADJUST',
+          qty: -qty,
+          operatedBy: String(op),
+          itemId: String(item._id),
+          categoryId: item.categoryId ?? '',
+          rackId: item.rackId ?? '',
+          refNo: String(item.itemNameCode ?? ''),
+          note: `Transfer out: -${qty} to rack ${toRackId}`,
+        });
+
+        await this.track({
+          type: 'ADJUST',
+          qty: +qty,
+          operatedBy: String(op),
+          itemId: String(dest._id),
+          categoryId: dest.categoryId ?? '',
+          rackId: dest.rackId ?? null,
+          refNo: String(dest.itemNameCode ?? ''),
+          note: `Transfer in: +${qty} from rack ${fromRackId}`,
+        });
+      }
+      // });
+
+      return true;
+    } finally {
+      // await session.endSession();
+    }
   }
-
-  /// Used by websocket: get racks that already contain same item (same itemNameId)
 
   async getSameItemRacks(itemId: string) {
     const item = await this.model.findById(this.oid(itemId)).lean();
@@ -405,100 +739,212 @@ export class StoreItemService {
     if (rackIds.length === 0) return [];
 
     const racks = await this.rackModel.find({ _id: { $in: rackIds } }).lean();
-
-    // ✅ normalize for Flutter
     return racks;
-    // .map((r: any) => ({
-    //   id: String(r._id),
-    //   name: r.name ?? '',
-    //   code: r.code ?? '',
-    //   roomId: r.roomId ? String(r.roomId) : null,
-    //   isOccupied: !!r.isOccupied,
-    //   itemId: r.itemId ? String(r.itemId) : null,
-    // }));
   }
 
-  /// ---------------------------
-  /// Existing method (keep)
-  /// ---------------------------
-  async changeItemRack(itemId: string, toRackId: string) {
-    const item = await this.model.findById(this.oid(itemId)).lean();
-    if (!item) throw new BadRequestException('Item not found');
+  async changeItemRack(itemId: string, toRackId: string, operatedBy?: string) {
+    const op = this.oidOrNull(operatedBy); // optional
+    // const session = await
 
-    const fromRackId = item.rackId ? String(item.rackId) : null;
-    if (fromRackId && fromRackId === toRackId) return true;
+    try {
+      // await session.withTransaction(async () => {
+      const item = await this.model.findById(this.oid(itemId));
+      // .session(session);
+      if (!item) throw new BadRequestException('Item not found');
 
-    await this.occupyRackIfFree(toRackId, itemId);
+      const fromRackId = item.rackId ? String(item.rackId) : null;
+      if (fromRackId && fromRackId === toRackId) return;
 
-    await this.model.updateOne(
-      { _id: this.oid(itemId) },
-      { $set: { rackId: this.oid(toRackId) } },
+      await this.occupyRackIfFree(toRackId, itemId);
+
+      await this.model.updateOne(
+        { _id: item._id },
+        { $set: { rackId: this.oid(toRackId) } },
+        // { session },
+      );
+
+      if (fromRackId) {
+        const released = await this.releaseRackForItem(
+          fromRackId,
+          itemId,
+          // session,
+        );
+        if (!released) {
+          await this.rackModel.updateOne(
+            { _id: this.oid(toRackId), itemId: this.oid(itemId) },
+            { $set: { isOccupied: false, itemId: null } },
+            // { session },
+          );
+          throw new BadRequestException(
+            'Old rack release failed (data mismatch)',
+          );
+        }
+      }
+
+      // ✅ track: EDIT (qty=0)
+      if (op) {
+        await this.track({
+          type: 'EDIT',
+          qty: 0,
+          operatedBy: String(op),
+          itemId: String(item._id),
+          categoryId: item.categoryId ?? '',
+          rackId: toRackId,
+          refNo: String((item as any).itemNameCode ?? ''),
+          note: `Rack changed: ${String(fromRackId ?? '')} -> ${String(toRackId)}`,
+        });
+      }
+      // });
+
+      return true;
+    } finally {
+      // await session.endSession();
+    }
+  }
+
+  private async occupyRackIfFree(
+    rackId: string,
+    itemId: string,
+    session?: ClientSession,
+  ) {
+    const rack = await this.rackModel.findOneAndUpdate(
+      {
+        _id: this.oid(rackId),
+        $or: [
+          { isOccupied: false },
+          { itemId: null },
+          { itemId: { $exists: false } },
+          { itemId: { $type: 'string' } }, // matches old "" safely
+        ],
+      },
+      {
+        $set: {
+          isOccupied: true,
+          itemId: this.oid(itemId),
+        },
+      },
+      { new: true, session },
     );
 
-    if (fromRackId) {
-      const released = await this.releaseRackForItem(fromRackId, itemId);
-      if (!released) {
-        await this.rackModel.updateOne(
-          { _id: this.oid(toRackId), itemId: this.oid(itemId) },
-          { $set: { isOccupied: false, itemId: null } },
-        );
-        throw new BadRequestException(
-          'Old rack release failed (data mismatch)',
-        );
-      }
-    }
-
-    return true;
+    if (!rack) throw new BadRequestException('Rack already occupied');
+    return rack;
   }
 
-  // /// ✅ IMPORTANT: NO `{ itemId: '' }` anywhere (prevents CastError)
-  // private async occupyRackIfFree(rackId: string, itemId: string) {
-  //   const rack = await this.rackModel.findOneAndUpdate(
-  //     {
-  //       _id: this.oid(rackId),
-  //       $or: [
-  //         { isOccupied: false },
-  //         { itemId: null },
-  //         { itemId: { $exists: false } },
-  //         { itemId: { $type: 'string' } }, // catches old "" safely without casting
-  //       ],
-  //     },
-  //     {
-  //       $set: {
-  //         isOccupied: true,
-  //         itemId: this.oid(itemId),
-  //       },
-  //     },
-  //     { new: true },
-  //   );
-
-  //   if (!rack) throw new BadRequestException('Rack already occupied');
-  //   return rack;
-  // }
-
-  /// allow occupied by same item id (for destination item in transfer qty)
-  private async occupyRackIfFreeOrOwned(rackId: string, itemId: string) {
+  private async occupyRackIfFreeOrOwned(
+    rackId: string,
+    itemId: string,
+    session?: ClientSession,
+  ) {
     const rack = await this.rackModel
-      .findOne({
-        _id: this.oid(rackId),
-      })
+      .findOne({ _id: this.oid(rackId) })
+      // .session(session)
       .lean();
-
     if (!rack) throw new BadRequestException('Rack not found');
 
-    // already owned by this item doc
     if (rack.itemId && String(rack.itemId) === itemId) return true;
 
-    // otherwise must be free/dirty
-    await this.occupyRackIfFree(rackId, itemId);
+    await this.occupyRackIfFree(rackId, itemId, session);
     return true;
   }
 
-  private async releaseRackForItem(rackId: string, itemId: string) {
+  private async releaseRackForItem(
+    rackId: string,
+    itemId: string,
+    session?: ClientSession,
+  ) {
     const res = await this.rackModel.updateOne(
       { _id: this.oid(rackId), itemId: this.oid(itemId) },
       { $set: { isOccupied: false, itemId: null } },
+      { session },
     );
     return res.modifiedCount > 0;
+  }
+
+  async getItemByRack(rackId: string) {
+    if (!rackId) return null;
+
+    const rack = await this.rackModel.findById(this.oid(rackId)).lean();
+    if (!rack) return null;
+
+    const itemId = rack.itemId ? String(rack.itemId) : '';
+    if (!itemId) return null;
+
+    const item = await this.model.findById(this.oid(itemId)).lean();
+    return item || null;
+  }
+
+  async getItemNameRacks(itemNameId: string) {
+    if (!itemNameId) return [];
+
+    const items = await this.model
+      .find({ itemNameId: this.oid(itemNameId) })
+      .select({
+        rackId: 1,
+        rackName: 1,
+        totalStockQuantity: 1,
+        stockAvailableQuantity: 1,
+      })
+      .lean();
+
+    const rackIds = items
+      .map((x: any) => x.rackId)
+      .filter(Boolean)
+      .map((x: any) => this.oid(String(x)));
+
+    const racks = await this.rackModel
+      .find({ _id: { $in: rackIds } })
+      .select({ name: 1, code: 1 })
+      .lean();
+
+    const rackById = new Map<string, any>(
+      racks.map((r: any) => [String(r._id), r]),
+    );
+
+    return items.map((it: any) => {
+      const rid = it.rackId ? String(it.rackId) : '';
+      const r = rackById.get(rid);
+      return {
+        itemId: String(it._id),
+        rackId: rid,
+        rackName: r?.name ?? it.rackName ?? '',
+        rackCode: r?.code ?? '',
+        available: Number(it.stockAvailableQuantity || 0),
+        total: Number(it.totalStockQuantity || 0),
+      };
+    });
+  }
+
+  async itemsubcategory(itemId: string) {
+    // if (!Types.ObjectId.isValid(itemId)) {
+    //   throw new BadRequestException('Invalid itemId');
+    // }
+
+    const item = await this.model.findById(itemId).lean();
+    if (!item) throw new NotFoundException('Item not found');
+
+    const baseCategoryId = item.categoryId;
+    if (!baseCategoryId) {
+      // no category => no subcategory items
+      return [];
+    }
+
+    // Find subcategories where parentId == baseCategoryId
+    const subcats = await this.catModel
+      .find({ parentId: baseCategoryId }, { _id: 1 })
+      .lean();
+
+    const subcatIds = subcats.map((c) => c._id);
+
+    // If no subcategories exist, return base item only (optional)
+    if (subcatIds.length === 0) {
+      return []; // or return [] based on your UI logic
+    }
+
+    // Fetch ALL items matching those subcategory ids
+    const itemsList = await this.model
+      .find({ categoryId: { $in: subcatIds } })
+      .lean();
+
+    return itemsList;
   }
 }

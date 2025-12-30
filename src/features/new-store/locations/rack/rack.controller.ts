@@ -8,8 +8,8 @@ export class RacksController {
   constructor(private readonly service: RacksService) {}
 
   @Post()
-  create(@Body() dto: CreateRackDto) {
-    return this.service.create(dto);
+  async create(@Body() dto: CreateRackDto) {
+    return await this.service.create(dto);
   }
 
   @Put(':id')

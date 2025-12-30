@@ -8,14 +8,21 @@ import {
   StoreItemName,
   StoreItemNameSchema,
 } from './entities/store-item-name.schema';
+import {
+  StockTrack,
+  StockTrackSchema,
+} from '../store-item/entities/stock-track.schema';
 
 @Module({
   imports: [
     CommonModule,
-    MongooseModule.forFeature([
-      { name: StoreItemName.name, schema: StoreItemNameSchema },
-    ],
-      'store',),
+    MongooseModule.forFeature(
+      [
+        { name: StoreItemName.name, schema: StoreItemNameSchema },
+        { name: StockTrack.name, schema: StockTrackSchema },
+      ],
+      'store',
+    ),
   ],
   controllers: [StoreItemNameController],
   providers: [StoreItemNameService, StoreItemNameGateway],

@@ -3,14 +3,12 @@ import mongoose, { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class StoreNewItem extends Document {
+  @Prop({ default: '' })
+  itemCode: string;
+
   // Field 1: ItemName
-  @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'StoreItemName',
-    required: true,
-    index: true,
-  })
-  itemNameId: any;
+  @Prop()
+  itemNameId: string;
 
   @Prop({ default: '' })
   itemName: string;
@@ -19,25 +17,15 @@ export class StoreNewItem extends Document {
   itemNameCode: string;
 
   // Field 2: Rack
-  @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'StoreRack',
-    required: true,
-    index: true,
-  })
-  rackId: any;
+  @Prop()
+  rackId: string;
 
   @Prop({ default: '' })
   rackName: string;
 
   // Field 3: Category/Subcategory (same collection; may point to category or subcategory)
-  @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'StoreCategory',
-    default: null,
-    index: true,
-  })
-  categoryId?: any;
+  @Prop()
+  categoryId?: string;
 
   @Prop({ default: '' })
   categoryLabel: string; // "Category > Subcategory" or "Category"

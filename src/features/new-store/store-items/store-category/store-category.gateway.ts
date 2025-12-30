@@ -29,4 +29,26 @@ export class StoreCategoryGateway {
     const data = await this.s.findOne(body?.id);
     client.emit('store:findOneCategory', data);
   }
+
+  @SubscribeMessage('store:parentcategory')
+  async findperent(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { id: string },
+  ) {
+    const data = await this.s.findperent();
+    client.emit('store:parentcategory', data);
+  }
+
+  @SubscribeMessage('store:categoryByIdperent')
+  async findchild(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { id: string },
+  ) {
+    console.log(body);
+    const data = await this.s.findchild(body?.id);
+
+    console.log(data);
+    
+    client.emit('store:categoryByIdperent', data);
+  }
 }

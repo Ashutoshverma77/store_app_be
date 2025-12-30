@@ -8,12 +8,16 @@ import {
   StoreCategorySchema,
 } from './entities/store-category.schema';
 import { CommonModule } from '../../common/common.module';
+import { StockTrack, StockTrackSchema } from '../store-item/entities/stock-track.schema';
 
 @Module({
   imports: [
     CommonModule,
     MongooseModule.forFeature(
-      [{ name: StoreCategory.name, schema: StoreCategorySchema }],
+      [
+        { name: StoreCategory.name, schema: StoreCategorySchema },
+        { name: StockTrack.name, schema: StockTrackSchema },
+      ],
       'store',
     ),
   ],

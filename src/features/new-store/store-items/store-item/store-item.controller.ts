@@ -1,10 +1,24 @@
-import { Body, Controller, Delete, Param, Patch, Post, Put } from '@nestjs/common';
-import { StoreItemService } from './store-item.service';
-import { CreateItemDto, TransferItemDto, TransferRackDto, UpdateItemDto } from './dto/store-item.dto';
+import {
+  Body,
+  Controller,
+  Delete,
+  Param,
+  Patch,
+  Post,
+  Put,
+} from '@nestjs/common';
+import { StoreNewItemService } from './store-item.service';
+import {
+  CreateItemDto,
+  TransferItemDto,
+  TransferRackDto,
+  UpdateItemDto,
+} from './dto/store-item.dto';
+import { UploadBase64Dto } from 'src/features/store-item/schema/upload-image.dto';
 
 @Controller('api/store/storeitems')
-export class StoreItemController {
-  constructor(private readonly s: StoreItemService) {}
+export class StoreNewItemController {
+  constructor(private readonly s: StoreNewItemService) {}
 
   @Post()
   async create(@Body() dto: CreateItemDto) {
@@ -26,7 +40,7 @@ export class StoreItemController {
     @Param('id') itemId: string,
     @Body() dto: TransferRackDto,
   ) {
-    await this.s.transferRack(itemId, dto.toRackId);
+    await this.s.transferRack(itemId, dto.toRackId, dto.createdBy);
     return { ok: true };
   }
 
@@ -40,13 +54,33 @@ export class StoreItemController {
       dto.fromRackId,
       dto.toRackId,
       dto.qty,
+      dto.createdBy,
     );
     return { ok: true };
+  }
+
+  @Post('receive')
+  async receive(@Body() dto: any) {
+    // dto: { itemId, qty, receivedBy, remark? }
+    await this.s.receiveItem(dto);
+    return { status: true, msg: 'Received successfully' };
   }
 
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.s.delete(id);
     return { status: true, msg: 'Deleted' };
+  }
+
+  @Post(':id/image/base64')
+  async uploadImage(@Param('id') id: string, @Body() dto: UploadBase64Dto) {
+    const { imageUrl, entity } = await this.s.uploadImageBase64(
+      'item',
+      id,
+      dto.base64,
+      'store-items',
+    );
+    // this.gateway.broadcastStoreItems().catch(() => {});
+    return { success: true, imageUrl, entity };
   }
 }

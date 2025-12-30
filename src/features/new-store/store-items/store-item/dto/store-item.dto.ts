@@ -5,6 +5,7 @@ export class CreateItemDto {
   @IsString() rackId: string;
 
   @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsString() subCategoryId?: string;
 
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsString() description?: string;
@@ -24,6 +25,7 @@ export class UpdateItemDto {
   @IsOptional() @IsString() description?: string;
 
   @IsOptional() @IsString() imageUrl?: string;
+  @IsOptional() @IsString() createdBy?: string;
 }
 
 export class ItemPagedQueryDto {
@@ -36,12 +38,12 @@ export class ItemPagedQueryDto {
   @IsOptional() @IsString() categoryId?: string;
 }
 
-
 export class TransferRackDto {
   @IsMongoId()
   toRackId: string;
-}
 
+  createdBy: string;
+}
 
 export class TransferItemDto {
   @IsMongoId()
@@ -53,4 +55,6 @@ export class TransferItemDto {
   @IsInt()
   @Min(1)
   qty: number;
+
+  createdBy: string;
 }

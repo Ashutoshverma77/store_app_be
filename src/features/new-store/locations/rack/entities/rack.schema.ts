@@ -14,26 +14,16 @@ export class Rack {
   @Prop({ default: '' })
   remark: string;
 
-  @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: Room.name,
-    required: true,
-    index: true,
-  })
-  roomId: any;
+  @Prop()
+  roomId: string;
 
   // ✅ NEW
   @Prop({ type: Boolean, default: false, index: true })
   isOccupied: boolean;
 
   // ✅ NEW (reference to item)
-  @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'StoreNewItem', // or your Item model name
-    default: null,
-    index: true,
-  })
-  itemId: any;
+  @Prop()
+  itemId: string;
 
   @Prop({ default: '' })
   roomName: string; // optional denormalized

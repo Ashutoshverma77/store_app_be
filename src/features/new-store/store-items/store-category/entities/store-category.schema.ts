@@ -13,13 +13,8 @@ export class StoreCategory extends Document {
   remark: string;
 
   // if parentId exists => subcategory
-  @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'StoreCategory',
-    default: null,
-    index: true,
-  })
-  parentId?: any;
+  @Prop({ default: '' })
+  parentId: string;
 
   @Prop({ default: '' })
   createdBy: string;
