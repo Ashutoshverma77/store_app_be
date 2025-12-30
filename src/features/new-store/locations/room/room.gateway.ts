@@ -1,7 +1,11 @@
-import { ConnectedSocket, MessageBody, SubscribeMessage, WebSocketGateway } from '@nestjs/websockets';
+import {
+  ConnectedSocket,
+  MessageBody,
+  SubscribeMessage,
+  WebSocketGateway,
+} from '@nestjs/websockets';
 import { RoomsService } from './room.service';
 import { Socket } from 'socket.io';
-
 
 @WebSocketGateway({ cors: { origin: '*', credentials: true } })
 export class RoomGateway {
@@ -29,5 +33,14 @@ export class RoomGateway {
     const id = String(body?.id ?? '');
     const res = await this.rooms.findOne(id);
     client.emit('store:findOneRoom', res);
+  }
+
+  @SubscribeMessage('store:findAllRoomData')
+  async findAllRoom(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.rooms.findAllRoom();
+    client.emit('store:findAllRoomData', res);
   }
 }

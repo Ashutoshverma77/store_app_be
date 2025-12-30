@@ -111,6 +111,12 @@ export class RoomsService {
     return doc;
   }
 
+  async findAllRoom() {
+    const doc = await this.model.find().lean();
+    if (!doc) throw new NotFoundException('Room not found');
+    return doc;
+  }
+
   /* -------------------- REST WRITES -------------------- */
 
   async create(dto: CreateRoomDto) {

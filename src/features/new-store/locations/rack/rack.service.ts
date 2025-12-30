@@ -147,6 +147,7 @@ export class RacksService {
     filter.$and.push({
       $or: [
         { isOccupied: false },
+        { itemId: '' },
         { itemId: null },
         { itemId: { $exists: false } },
         ...(allowOid ? [{ itemId: allowOid }] : []),
@@ -168,6 +169,14 @@ export class RacksService {
 
   async findOne(id: string) {
     const doc = await this.model.findById(id).lean();
+    if (!doc) throw new NotFoundException('Rack not found');
+    return doc;
+  }
+
+  async findRackByRoom(roomId: string) {
+    const doc = await this.model
+      .find({ roomId: roomId, isOccupied: false })
+      .lean();
     if (!doc) throw new NotFoundException('Rack not found');
     return doc;
   }
@@ -205,7 +214,7 @@ export class RacksService {
           qty: 0,
           refNo: created?.code ?? '',
           rackId: created?._id ?? null,
-          itemId: "",
+          itemId: '',
           note: `Rack created: ${created?.name ?? ''} (${created?.code ?? ''})`,
         },
       ]);

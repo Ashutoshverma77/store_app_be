@@ -947,4 +947,8 @@ export class StoreNewItemService {
 
     return itemsList;
   }
+
+  async itemOne(id: string) {
+    return await this.model.find({ _id: id }).lean();
+  }
 }

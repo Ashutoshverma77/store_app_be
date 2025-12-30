@@ -73,4 +73,13 @@ export class StoreNewItemGateway {
 
     client.emit('store:itemsubcategory', rows);
   }
+
+  @SubscribeMessage('store:itemOne')
+  async itemOne(@ConnectedSocket() client: Socket, @MessageBody() body: any) {
+    const itemId = String(body?.itemId || '').trim();
+
+    const item = await this.s.itemOne(itemId); // returns item or null
+    console.log(item);
+    client.emit('store:itemOne', item); // map or null
+  }
 }

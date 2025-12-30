@@ -22,7 +22,7 @@ export class Rack {
   isOccupied: boolean;
 
   // ✅ NEW (reference to item)
-  @Prop()
+  @Prop({ default: '' })
   itemId: string;
 
   @Prop({ default: '' })
