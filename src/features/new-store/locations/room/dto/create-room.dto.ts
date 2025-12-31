@@ -11,5 +11,9 @@ export class CreateRoomDto {
 
   @IsOptional()
   @IsString()
+  isScrap?: boolean;
+
+  @IsOptional()
+  @IsString()
   createdBy?: string;
 }

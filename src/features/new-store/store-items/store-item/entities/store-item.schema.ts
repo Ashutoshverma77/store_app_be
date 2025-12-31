@@ -7,7 +7,7 @@ export class StoreNewItem extends Document {
   itemCode: string;
 
   // Field 1: ItemName
-  @Prop()
+  @Prop({ default: '' })
   itemNameId: string;
 
   @Prop({ default: '' })
@@ -17,14 +17,14 @@ export class StoreNewItem extends Document {
   itemNameCode: string;
 
   // Field 2: Rack
-  @Prop()
+  @Prop({ default: '' })
   rackId: string;
 
   @Prop({ default: '' })
   rackName: string;
 
   // Field 3: Category/Subcategory (same collection; may point to category or subcategory)
-  @Prop()
+  @Prop({ default: '' })
   categoryId?: string;
 
   @Prop({ default: '' })
@@ -37,6 +37,9 @@ export class StoreNewItem extends Document {
   // Field 5:
   @Prop({ default: '' })
   description: string;
+
+  @Prop({ default: false })
+  isScrap: boolean;
 
   // Extra fields
   @Prop({ type: Number, required: true, min: 0, default: 0 })

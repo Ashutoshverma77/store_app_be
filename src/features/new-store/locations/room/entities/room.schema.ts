@@ -11,6 +11,9 @@ export class Room {
   @Prop({ required: true, index: true })
   name: string;
 
+  @Prop({ default: false })
+  isScrap: boolean;
+
   @Prop({ default: '' })
   remark: string;
 

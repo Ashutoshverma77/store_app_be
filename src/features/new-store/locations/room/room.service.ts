@@ -111,12 +111,17 @@ export class RoomsService {
     return doc;
   }
 
+  async findAllRoomByScrap(isScrap: boolean) {
+    const doc = await this.model.find({ isScrap }).lean();
+    if (!doc) throw new NotFoundException('Room not found');
+    return doc;
+  }
+
   async findAllRoom() {
     const doc = await this.model.find().lean();
     if (!doc) throw new NotFoundException('Room not found');
     return doc;
   }
-
   /* -------------------- REST WRITES -------------------- */
 
   async create(dto: CreateRoomDto) {
@@ -136,6 +141,7 @@ export class RoomsService {
           {
             code,
             name,
+            isScrap: dto.isScrap,
             remark: dto.remark ?? '',
             createdBy: dto.createdBy ?? '',
           },
@@ -171,18 +177,19 @@ export class RoomsService {
   }
 
   async createrackroom(dto: any) {
-    console.log(dto);
+    // console.log(dto);
     // const operatedBy = this.getOperatorId(dto);
     // if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
 
     // const session = await
     try {
-      const { name, remark, createdBy, rackmake } = dto;
+      const { name, remark, createdBy, rackmake, isScrap } = dto;
       const coderoom = await this.counterService.nextCode('room', 'RM');
       // Step 1: Create the room
       const newRoom = await this.model.create({
         code: coderoom.code,
         name,
+        isScrap,
         remark: remark ?? '',
         createdBy: createdBy ?? '',
       });
@@ -195,6 +202,7 @@ export class RoomsService {
         var rack = await this.rackmodel.create({
           code,
           name,
+          isScrap,
           remark: remark ?? '',
           roomId: newRoom._id,
           roomName: newRoom?.name ?? '',

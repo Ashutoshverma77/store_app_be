@@ -3,6 +3,7 @@ import { IsInt, IsMongoId, IsOptional, IsString, Min } from 'class-validator';
 export class CreateItemDto {
   @IsString() itemNameId: string;
   @IsString() rackId: string;
+  @IsString() scrapRackId: string;
 
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() subCategoryId?: string;

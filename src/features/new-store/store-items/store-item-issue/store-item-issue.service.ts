@@ -170,9 +170,8 @@ export class IssueService {
   /* -------------------------------------------------------
      (optional) if you ever use this, it now tracks ISSUE too
      ------------------------------------------------------- */
-  private async deductStockOrThrow(itemId: string, qty: number,) {
-    const item = await this.itemModel
-      .findById(this.oid(itemId))
+  private async deductStockOrThrow(itemId: string, qty: number) {
+    const item = await this.itemModel.findById(this.oid(itemId));
     if (!item) throw new BadRequestException('Store item not found');
 
     const avail = this.n((item as any).stockAvailableQuantity, 0);
@@ -525,21 +524,23 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-    if (String(issue.status).toUpperCase() !== 'DRAFT')
-      throw new BadRequestException('Only DRAFT can be approved');
+    // if (String(issue.status).toUpperCase() !== 'DRAFT')
+    //   throw new BadRequestException('Only DRAFT can be approved');
     if (!issue.lines?.length) throw new BadRequestException('No lines');
 
     const line: any = issue.lines[0];
     const requestedQty = Number(line.requestedQty || 0);
 
     let approvedQty = Number(dto?.approvedQty ?? requestedQty);
+    let approvedRejectQty = Number(dto?.approvedRejectQty ?? 0);
     if (!Number.isFinite(approvedQty) || approvedQty <= 0)
       approvedQty = requestedQty;
     if (approvedQty > requestedQty) approvedQty = requestedQty;
 
     line.approvedQty = approvedQty;
+    line.approvedRejectQty = approvedRejectQty;
 
-    issue.status = 'APPROVED';
+    // issue.status = 'APPROVED';
     (issue as any).approvedBy = this.oid(approvedBy);
     (issue as any).approvedAt = new Date();
 
@@ -574,8 +575,10 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-    if (String(issue.status).toUpperCase() !== 'DRAFT')
-      throw new BadRequestException('Only DRAFT can be approved');
+    // if (String(issue.status).toUpperCase() !== 'DRAFT')
+    //   throw new BadRequestException('Only DRAFT can be approved');
+    const storeItem = await this.itemModel.findById(this.oid(itemId));
+    if (!storeItem) throw new BadRequestException('Store item not found');
 
     const idx = (issue.lines || []).findIndex(
       (l: any) => String(l.itemId) === itemId,
@@ -585,7 +588,7 @@ export class IssueService {
     const line: any = issue.lines[idx];
     const requested = this.num(line.requestedQty, 0);
     const prevApproved = this.num(line.approvedQty, 0);
-
+    const prevRejected = this.num(line.approvedRejectQty, 0);
     if (!Number.isFinite(requested) || requested <= 0) {
       throw new BadRequestException('Invalid requestedQty on line');
     }
@@ -593,6 +596,10 @@ export class IssueService {
     const incomingQty = this.num(
       dto?.approvedQty,
       mode === 'add' ? 0 : prevApproved,
+    );
+    const approvedRejectQty = this.num(
+      dto?.approvedRejectQty,
+      mode === 'add' ? 0 : prevRejected,
     );
 
     if (mode === 'add' && incomingQty <= 0) {
@@ -602,12 +609,33 @@ export class IssueService {
       throw new BadRequestException('approvedQty cannot be negative');
     }
 
+    const totalApprovedAndRejected =
+      prevApproved + incomingQty + prevRejected + approvedRejectQty;
+    if (requested < totalApprovedAndRejected) {
+      throw new BadRequestException(
+        'Requested quantity cannot be less than the sum of approved, incoming, previous rejected, and reject quantities',
+      );
+    }
+    const avail = Number((storeItem as any).stockAvailableQuantity || 0);
+    (storeItem as any).stockAvailableQuantity = avail + approvedRejectQty;
+
+    await storeItem.save();
+
     const nextApproved =
       mode === 'set'
-        ? this.clamp(incomingQty, 0, requested)
-        : this.clamp(prevApproved + incomingQty, 0, requested);
+        ? this.clamp(
+            incomingQty,
+            0,
+            requested - prevRejected - approvedRejectQty,
+          ) // Ensure we don't approve more than remaining after previous rejects
+        : this.clamp(
+            prevApproved + incomingQty,
+            0,
+            requested - prevRejected - approvedRejectQty,
+          );
 
     line.approvedQty = nextApproved;
+    line.approvedRejectQty = prevRejected + approvedRejectQty;
 
     (issue as any).approvedBy = this.oid(approvedBy);
     (issue as any).approvedAt = new Date();
@@ -617,7 +645,7 @@ export class IssueService {
       const aq = this.num(x.approvedQty, 0);
       return rq > 0 && aq >= rq;
     });
-    issue.status = allApproved ? 'APPROVED' : 'DRAFT';
+    // issue.status = allApproved ? 'APPROVED' : 'DRAFT';
 
     issue.markModified('lines');
     await issue.save();
@@ -634,7 +662,7 @@ export class IssueService {
     return {
       issueId: String(issue._id),
       issNo: (issue as any).issNo,
-      status: issue.status,
+      // status: issue.status,
       updatedLine: {
         itemId: String(line.itemId),
         requestedQty: requested,
@@ -653,8 +681,8 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-    if (String(issue.status).toUpperCase() !== 'DRAFT')
-      throw new BadRequestException('Only DRAFT can be approved');
+    // if (String(issue.status).toUpperCase() !== 'DRAFT')
+    //   throw new BadRequestException('Only DRAFT can be approved');
 
     const updates = Array.isArray(dto?.lines) ? dto.lines : [];
     if (!updates.length) throw new BadRequestException('lines required');
@@ -701,7 +729,7 @@ export class IssueService {
       const aq = this.num(x.approvedQty, 0);
       return rq > 0 && aq >= rq;
     });
-    issue.status = allApproved ? 'APPROVED' : 'DRAFT';
+    // issue.status = allApproved ? 'APPROVED' : 'DRAFT';
 
     issue.markModified('lines');
     await issue.save();
@@ -718,7 +746,7 @@ export class IssueService {
     return {
       issueId: String(issue._id),
       issNo: (issue as any).issNo,
-      status: issue.status,
+      // status: issue.status,
       updatedLines,
     };
   }
@@ -729,6 +757,7 @@ export class IssueService {
     const issuedBy = String(dto.issuedBy || '').trim();
     const itemId = String(dto.itemId || '').trim();
     const qty = Number(dto.qty || 0);
+    const reject = Number(dto.issuedRejectQty || 0);
 
     if (!Types.ObjectId.isValid(issuedBy))
       throw new BadRequestException('issuedBy invalid');
@@ -736,19 +765,22 @@ export class IssueService {
       throw new BadRequestException('itemId invalid');
     if (!Number.isFinite(qty) || qty <= 0)
       throw new BadRequestException('qty invalid');
+    if (!Number.isFinite(reject) || reject <= 0)
+      throw new BadRequestException('qty invalid');
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-    if (String(issue.status).toUpperCase() !== 'APPROVED')
-      throw new BadRequestException('Only APPROVED can be issued');
+    // if (String(issue.status).toUpperCase() !== 'APPROVED')
+    //   throw new BadRequestException('Only APPROVED can be issued');
 
-    const prevStatus = String(issue.status || '').toUpperCase();
+    // const prevStatus = String(issue.status || '').toUpperCase();
 
     const { line } = this.findLine(issue, itemId);
 
     const approvedQty = Number((line as any).approvedQty || 0);
     const issuedQty = Number((line as any).issuedQty || 0);
-    const canIssue = approvedQty - issuedQty;
+    const issuedRejectQty = Number((line as any).issuedRejectQty || 0);
+    const canIssue = approvedQty - issuedQty - issuedRejectQty;
 
     if (canIssue <= 0)
       throw new BadRequestException('Nothing approved to issue for this item');
@@ -756,16 +788,19 @@ export class IssueService {
       throw new BadRequestException(
         `Qty exceeds approved remaining (${canIssue})`,
       );
-
+    if (reject > canIssue)
+      throw new BadRequestException(
+        'Reject quantity exceeds approved quantity',
+      );
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
 
     const avail = Number((storeItem as any).stockAvailableQuantity || 0);
     if (avail < qty)
       throw new BadRequestException(`Insufficient stock. Available: ${avail}`);
-
+    var adddata = avail - qty;
     // ✅ stock updates
-    (storeItem as any).stockAvailableQuantity = avail - qty;
+    (storeItem as any).stockAvailableQuantity = adddata + reject;
     (storeItem as any).stockIssueQuantity =
       Number((storeItem as any).stockIssueQuantity || 0) + qty;
 
@@ -773,26 +808,28 @@ export class IssueService {
 
     // ✅ issue line updates
     (line as any).issuedQty = issuedQty + qty;
+    (line as any).issuedRejectQty = issuedRejectQty + reject;
 
-    // ✅ allocation log
     issue.allocations = issue.allocations || [];
-    issue.allocations.push({
-      itemId: this.oid(itemId),
-      itemName: (storeItem as any).itemName || (line as any).itemName,
-      rackId: (storeItem as any).rackId,
-      rackName: (storeItem as any).rackName || '',
-      qty,
-      returnedQty: 0,
-      returnedGoodQty: 0,
-      returnedScrapQty: 0,
-      issuedAt: new Date(),
-      issuedBy: this.oid(issuedBy),
-    } as any);
-
+    if ((storeItem as any).rackId != '') {
+      // ✅ allocation log
+      issue.allocations.push({
+        itemId: this.oid(itemId),
+        itemName: (storeItem as any).itemName || (line as any).itemName,
+        rackId: (storeItem as any).rackId,
+        rackName: (storeItem as any).rackName || '',
+        qty,
+        returnedQty: 0,
+        returnedGoodQty: 0,
+        returnedScrapQty: 0,
+        issuedAt: new Date(),
+        issuedBy: this.oid(issuedBy),
+      } as any);
+    }
     // ✅ auto close if fully issued
-    issue.status = this.computeCloseStatus(issue);
+    // issue.status = this.computeCloseStatus(issue);
     if (
-      String(issue.status).toUpperCase() === 'CLOSED' &&
+      // String(issue.status).toUpperCase() === 'CLOSED' &&
       !(issue as any).closedAt
     ) {
       (issue as any).closedAt = new Date();
@@ -813,7 +850,7 @@ export class IssueService {
     });
 
     // ✅ Track CLOSED if changed
-    await this.trackCloseIfChanged(prevStatus, issue, issuedBy);
+    // await this.trackCloseIfChanged(prevStatus, issue, issuedBy);
 
     return {
       updatedLine: {
@@ -823,7 +860,7 @@ export class IssueService {
         returnQty: Number((line as any).returnQty || 0),
         scrapQty: Number((line as any).scrapQty || 0),
       },
-      status: issue.status,
+      // status: issue.status,
     };
   }
 
@@ -839,10 +876,10 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-    if (String(issue.status).toUpperCase() !== 'APPROVED')
-      throw new BadRequestException('Only APPROVED can be issued');
+    // if (String(issue.status).toUpperCase() !== 'APPROVED')
+    //   throw new BadRequestException('Only APPROVED can be issued');
 
-    const prevStatus = String(issue.status || '').toUpperCase();
+    // const prevStatus = String(issue.status || '').toUpperCase();
     const updated: any[] = [];
 
     for (const l of lines) {
@@ -909,9 +946,9 @@ export class IssueService {
       updated.push({ itemId, issuedQty: (line as any).issuedQty });
     }
 
-    issue.status = this.computeCloseStatus(issue);
+    // issue.status = this.computeCloseStatus(issue);
     if (
-      String(issue.status).toUpperCase() === 'CLOSED' &&
+      // String(issue.status).toUpperCase() === 'CLOSED' &&
       !(issue as any).closedAt
     ) {
       (issue as any).closedAt = new Date();
@@ -922,16 +959,22 @@ export class IssueService {
     await issue.save();
 
     // ✅ Track CLOSED if changed
-    await this.trackCloseIfChanged(prevStatus, issue, issuedBy);
+    // await this.trackCloseIfChanged(prevStatus, issue, issuedBy);
 
-    return { updatedLines: updated, status: issue.status };
+    return {
+      updatedLines: updated,
+      //  status: issue.status
+    };
   }
 
   /* ---------------- RETURN LINE (good + scrap) ---------------- */
 
   async returnLine(issueId: string, dto: any) {
+    console.log(dto);
+
     const returnedBy = String(dto.returnedBy || '').trim();
     const itemId = String(dto.itemId || '').trim();
+    const scrapRackId = String(dto.scrapRackId || '').trim();
 
     const goodQty = Number(dto.goodQty ?? 0);
     const scrapQty = Number(dto.scrapQty ?? 0);
@@ -953,12 +996,12 @@ export class IssueService {
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
 
-    const st = String(issue.status || '')
-      .trim()
-      .toUpperCase();
-    if (st !== 'CLOSED') {
-      throw new BadRequestException('Only CLOSED issues can be returned');
-    }
+    // const st = String(issue.status || '')
+    //   .trim()
+    //   .toUpperCase();
+    // if (st !== 'CLOSED') {
+    //   throw new BadRequestException('Only CLOSED issues can be returned');
+    // }
 
     const lineIndex = (issue.lines || []).findIndex(
       (l: any) => String(l.itemId) === String(itemId),
@@ -1057,6 +1100,23 @@ export class IssueService {
 
     await storeItem.save();
 
+    if (scrapQty > 0) {
+      const scrapRack = await this.rackModel.findById(this.oid(scrapRackId));
+      if (!issue) throw new BadRequestException('Issue not found');
+
+      const scrapItem = await this.itemModel.findById(
+        this.oid(scrapRack?.itemId),
+      );
+      if (!scrapItem) throw new BadRequestException('Issue not found');
+      if (scrapRack?.itemId != dto.itemId) {
+        (scrapItem as any).totalStockQuantity =
+          Number((scrapItem as any).totalStockQuantity || 0) + scrapQty;
+        (scrapItem as any).stockAvailableQuantity =
+          Number((scrapItem as any).stockAvailableQuantity || 0) + scrapQty;
+        await scrapItem.save();
+      }
+    }
+
     // ✅ Track RETURN / SCRAP
     if (goodQty > 0) {
       await this.track({
@@ -1106,8 +1166,8 @@ export class IssueService {
     if (!issue) throw new BadRequestException('Issue not found');
 
     // ✅ FIX: must be CLOSED (consistent with returnLine)
-    if (String(issue.status).toUpperCase() !== 'CLOSED')
-      throw new BadRequestException('Only CLOSED can be returned');
+    // if (String(issue.status).toUpperCase() !== 'CLOSED')
+    //   throw new BadRequestException('Only CLOSED can be returned');
 
     const updated: any[] = [];
 
@@ -1203,10 +1263,10 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-    if (String(issue.status).toUpperCase() !== 'APPROVED')
-      throw new BadRequestException('Only APPROVED can be issued');
+    // if (String(issue.status).toUpperCase() !== 'APPROVED')
+    //   throw new BadRequestException('Only APPROVED can be issued');
 
-    const prevStatus = String(issue.status || '').toUpperCase();
+    // const prevStatus = String(issue.status || '').toUpperCase();
 
     const line: any = issue.lines?.[0];
     if (!line) throw new BadRequestException('No issue line');
@@ -1298,9 +1358,9 @@ export class IssueService {
     line.issuedQty = Number(line.issuedQty || 0) + issuedTotal;
     issue.allocations = [...(issue.allocations || []), ...allocations];
 
-    issue.status = this.computeCloseStatus(issue);
+    // issue.status = this.computeCloseStatus(issue);
     if (
-      String(issue.status).toUpperCase() === 'CLOSED' &&
+      // String(issue.status).toUpperCase() === 'CLOSED' &&
       !(issue as any).closedAt
     ) {
       (issue as any).closedAt = new Date();
@@ -1312,7 +1372,7 @@ export class IssueService {
 
     // ✅ Track CLOSED if changed
     if (issuedBy) {
-      await this.trackCloseIfChanged(prevStatus, issue, issuedBy);
+      // await this.trackCloseIfChanged(prevStatus, issue, issuedBy);
     }
 
     return { issuedTotal, remaining };
@@ -1337,7 +1397,7 @@ export class IssueService {
     if (!issue.allocations?.length)
       throw new BadRequestException('No allocations found');
 
-    const prevStatus = String(issue.status || '').toUpperCase();
+    // const prevStatus = String(issue.status || '').toUpperCase();
 
     const alloc: any = issue.allocations.find(
       (a: any) => String(a._id) === allocationId,
@@ -1370,7 +1430,7 @@ export class IssueService {
         Number(line.returnQty || 0) >= Number(line.issuedQty || 0);
 
       if (fullyReturned) {
-        issue.status = 'CLOSED';
+        // issue.status = 'CLOSED';
         (issue as any).closedAt = new Date();
       }
     }
@@ -1391,7 +1451,7 @@ export class IssueService {
       });
 
       // ✅ Track CLOSED if changed
-      await this.trackCloseIfChanged(prevStatus, issue, returnedBy);
+      // await this.trackCloseIfChanged(prevStatus, issue, returnedBy);
     }
 
     return true;

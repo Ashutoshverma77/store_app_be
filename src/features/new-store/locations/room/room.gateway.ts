@@ -43,4 +43,13 @@ export class RoomGateway {
     const res = await this.rooms.findAllRoom();
     client.emit('store:findAllRoomData', res);
   }
+
+  @SubscribeMessage('store:findAllRoomDataByScrap')
+  async findAllRoomByScrap(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.rooms.findAllRoomByScrap(body.dto);
+    client.emit('store:findAllRoomDataByScrap', res);
+  }
 }

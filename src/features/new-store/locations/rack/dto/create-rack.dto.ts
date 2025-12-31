@@ -4,14 +4,19 @@ export class CreateRackDto {
   @IsString()
   roomId: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   name?: string; // optional -> default to code
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   remark?: string;
 
-  @IsOptional() @IsString()
-  createdBy?: string;
+  @IsOptional()
+  @IsString()
+  isScrap?: boolean;
 
-  
+  @IsOptional()
+  @IsString()
+  createdBy?: string;
 }

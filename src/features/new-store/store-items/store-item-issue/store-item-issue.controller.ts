@@ -41,7 +41,7 @@ export class IssueController {
 
   @Put(':id/issue-line')
   async issueLine(@Param('id') id: string, @Body() dto: any) {
-    console.log(dto);
+    // console.log(dto);
 
     const data = await this.s.issueLine(id, dto);
     return { status: true, msg: 'Issued', data };

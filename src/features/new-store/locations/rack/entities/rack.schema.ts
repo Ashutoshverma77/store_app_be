@@ -26,6 +26,12 @@ export class Rack {
   itemId: string;
 
   @Prop({ default: '' })
+  itemName: string;
+
+  @Prop({ default: false })
+  isScrap: boolean;
+
+  @Prop({ default: '' })
   roomName: string; // optional denormalized
 
   @Prop({ default: '' })

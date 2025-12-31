@@ -198,6 +198,7 @@ export class RacksService {
         {
           code,
           name,
+          isScrap: dto.isScrap,
           remark: dto.remark ?? '',
           roomId: dto.roomId,
           roomName: room?.name ?? '',

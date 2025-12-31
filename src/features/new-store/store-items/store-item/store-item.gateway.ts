@@ -79,7 +79,28 @@ export class StoreNewItemGateway {
     const itemId = String(body?.itemId || '').trim();
 
     const item = await this.s.itemOne(itemId); // returns item or null
-    console.log(item);
+    // console.log(item);
     client.emit('store:itemOne', item); // map or null
+  }
+
+  @SubscribeMessage('store:findOneRack')
+  async findOneRack(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: any,
+  ) {
+    const rackId = String(body?.rackId || '').trim();
+
+    const item = await this.s.findOneRack(rackId); // returns item or null
+    // console.log(item);
+    client.emit('store:findOneRack', item); // map or null
+  }
+
+  @SubscribeMessage('store:scrapItemAllData')
+  async scrapItem(@ConnectedSocket() client: Socket, @MessageBody() body: any) {
+    const itemId = String(body?.itemId || '').trim();
+
+    const item = await this.s.scrapItem(body); // returns item or null
+    console.log(item);
+    client.emit('store:scrapItemAllData', item); // map or null
   }
 }

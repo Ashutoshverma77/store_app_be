@@ -26,6 +26,12 @@ class IssueLine {
   @Prop({ default: 0, min: 0 })
   scrapQty: number;
 
+  @Prop({ default: 0, min: 0 })
+  approvedRejectQty: number;
+
+  @Prop({ default: 0, min: 0 })
+  issuedRejectQty: number;
+
   @Prop({ default: '' })
   unit: string;
 }
@@ -78,11 +84,11 @@ export class ItemIssue {
   @Prop({ type: [IssueLine], default: [] })
   lines: IssueLine[];
 
-  @Prop({
-    default: 'DRAFT',
-    enum: ['DRAFT', 'APPROVED', 'CLOSED', 'CANCELLED'],
-  })
-  status: string;
+  // @Prop({
+  //   default: 'DRAFT',
+  //   enum: ['DRAFT', 'APPROVED', 'CLOSED', 'CANCELLED'],
+  // })
+  // status: string;
 
   @Prop()
   createdBy: string;
