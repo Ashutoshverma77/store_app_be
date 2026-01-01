@@ -33,6 +33,10 @@ import { v4 as uuid } from 'uuid';
 import { UserService } from 'src/features/user/user.service';
 import { minioClient } from 'src/config/minio.config';
 import { CounterService } from '../../common/code-gen.service';
+import {
+  ItemRackQty,
+  ItemRackQtyDocument,
+} from '../../locations/rack/entities/item-rack-qty.schema';
 
 @Injectable()
 export class StoreNewItemService {
@@ -56,6 +60,9 @@ export class StoreNewItemService {
     // ✅ Track Model
     @InjectModel(StockTrack.name, 'store')
     private readonly trackModel: Model<StockTrackDocument>,
+
+    @InjectModel(ItemRackQty.name, 'store')
+    private readonly itemRackQtyModel: Model<ItemRackQtyDocument>,
 
     // ✅ Transaction connection
     @InjectConnection('store')
@@ -603,6 +610,16 @@ export class StoreNewItemService {
 
       const receivingDoc = receipt?.[0];
 
+      var checkrack = await this.itemRackQtyModel.findOne({
+        rackId: rackId,
+        itemId: itemId,
+      });
+      await this.itemRackQtyModel.findByIdAndUpdate(checkrack?._id, {
+        $inc: {
+          totalStockQuantity: qty,
+          stockAvailableQuantity: qty,
+        },
+      });
       // 3) track RECEIVE (+qty)
       await this.track({
         type: 'RECEIVE',
@@ -762,6 +779,25 @@ export class StoreNewItemService {
         // { session },
       );
 
+      var checkrack = await this.itemRackQtyModel.find({
+        rackId: fromRackId,
+        itemId: item._id,
+        stockAvailableQuantity: { $gte: qty },
+      });
+
+      if (checkrack.length > 0) {
+        const dec = await this.itemRackQtyModel.findByIdAndUpdate(
+          checkrack![0]._id,
+          {
+            $inc: {
+              stockAvailableQuantity: -qty,
+              totalStockQuantity: -qty,
+            },
+          },
+          // { session },
+        );
+      }
+
       if (dec.modifiedCount <= 0) {
         throw new BadRequestException('Not enough available quantity');
       }
@@ -777,7 +813,23 @@ export class StoreNewItemService {
         },
         // { session },
       );
+      var checkrack = await this.itemRackQtyModel.find({
+        rackId: toRackId,
+        itemId: item._id,
+      });
 
+      if (checkrack.length > 0) {
+        const dec = await this.itemRackQtyModel.findByIdAndUpdate(
+          checkrack![0]._id,
+          {
+            $inc: {
+              stockAvailableQuantity: qty,
+              totalStockQuantity: qty,
+            },
+          },
+          // { session },
+        );
+      }
       if (inc.modifiedCount <= 0) {
         // rollback
         await this.model.updateOne(
@@ -825,24 +877,53 @@ export class StoreNewItemService {
     const item = await this.model.findById(this.oid(itemId)).lean();
     if (!item) throw new BadRequestException('Item not found');
 
-    const others = await this.model
-      .find({
-        itemNameId: item.itemNameId,
-        isScrap: item.isScrap,
-        categoryId: item.categoryId,
-        _id: { $ne: this.oid(itemId) },
-      })
-      .select({ rackId: 1 })
+    // const others = await this.model
+    //   .find({
+    //     itemNameId: item.itemNameId,
+    //     isScrap: item.isScrap,
+    //     categoryId: item.categoryId,
+    //     _id: { $ne: this.oid(itemId) },
+    //   })
+    //   .select({ rackId: 1 })
+    //   .lean();
+
+    // console.log(others);
+    // const rackIds = others
+    //   .map((x: any) => String(x.rackId || ''))
+    //   .filter((id) => Types.ObjectId.isValid(id))
+    //   .map((id) => new Types.ObjectId(id));
+
+    // if (rackIds.length === 0) return [];
+
+    const racks = await this.rackModel.find({ itemId: itemId }).lean();
+    return racks;
+  }
+
+  async getSameItemByRacks(itemId: string, rackId: string) {
+    const item = await this.model.findById(this.oid(itemId)).lean();
+    if (!item) throw new BadRequestException('Item not found');
+
+    // const others = await this.model
+    //   .find({
+    //     itemNameId: item.itemNameId,
+    //     isScrap: item.isScrap,
+    //     categoryId: item.categoryId,
+    //     _id: { $ne: this.oid(itemId) },
+    //   })
+    //   .select({ rackId: 1 })
+    //   .lean();
+
+    // console.log(others);
+    // const rackIds = others
+    //   .map((x: any) => String(x.rackId || ''))
+    //   .filter((id) => Types.ObjectId.isValid(id))
+    //   .map((id) => new Types.ObjectId(id));
+
+    // if (rackIds.length === 0) return [];
+
+    const racks = await this.rackModel
+      .find({ itemId: itemId, _id: { $ne: this.oid(rackId) } })
       .lean();
-
-    const rackIds = others
-      .map((x: any) => String(x.rackId || ''))
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    if (rackIds.length === 0) return [];
-
-    const racks = await this.rackModel.find({ _id: { $in: rackIds } }).lean();
     return racks;
   }
 
@@ -873,12 +954,17 @@ export class StoreNewItemService {
           itemId,
           // session,
         );
+
         if (!released) {
           await this.rackModel.updateOne(
             { _id: this.oid(toRackId), itemId: this.oid(itemId) },
             { $set: { isOccupied: false, itemId: null } },
             // { session },
           );
+          await this.itemRackQtyModel.findByIdAndDelete({
+            rackId: fromRackId,
+            itemId: itemId,
+          });
           throw new BadRequestException(
             'Old rack release failed (data mismatch)',
           );
@@ -930,6 +1016,13 @@ export class StoreNewItemService {
       { new: true },
     );
 
+    await this.itemRackQtyModel.create({
+      itemId: itemId,
+      itemName: '',
+      rackId: rackId,
+      rackCode: '',
+    });
+
     if (!rack) throw new BadRequestException('Rack already occupied');
     return rack;
   }
@@ -950,6 +1043,7 @@ export class StoreNewItemService {
     if (rack.itemId && String(rack.itemId) === itemId) return true;
 
     await this.occupyRackIfFree(rackId, itemId, String(item.itemName));
+
     return true;
   }
 
@@ -958,6 +1052,11 @@ export class StoreNewItemService {
       { _id: this.oid(rackId), itemId: this.oid(itemId) },
       { $set: { isOccupied: false, itemId: null } },
     );
+
+    await this.itemRackQtyModel.findByIdAndDelete({
+      rackId: rackId,
+      itemId: itemId,
+    });
     return res.modifiedCount > 0;
   }
 

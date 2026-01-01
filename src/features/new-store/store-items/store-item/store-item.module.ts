@@ -20,6 +20,7 @@ import { StockTrack, StockTrackSchema } from './entities/stock-track.schema';
 import { StoreNewItemService } from './store-item.service';
 import { UserModule } from 'src/features/user/user.module';
 import { CommonModule } from '../../common/common.module';
+import { ItemRackQty, ItemRackQtySchema } from '../../locations/rack/entities/item-rack-qty.schema';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CommonModule } from '../../common/common.module';
         { name: Rack.name, schema: RackSchema },
         { name: StoreReceive.name, schema: StoreReceiveSchema },
         { name: StockTrack.name, schema: StockTrackSchema },
+        { name: ItemRackQty.name, schema: ItemRackQtySchema },
       ],
       'store',
     ),

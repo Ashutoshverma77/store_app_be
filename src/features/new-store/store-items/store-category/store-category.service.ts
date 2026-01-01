@@ -95,7 +95,7 @@ export class StoreCategoryService {
       const created = await this.model.create(
         [
           {
-            format,
+           code: format,
             name: dto.name,
             remark: dto.remark ?? '',
             parentId: dto.parentId ? dto.parentId : '',

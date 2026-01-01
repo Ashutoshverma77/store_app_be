@@ -15,6 +15,10 @@ import {
   StockTrackDocument,
   StockTrackType,
 } from '../../store-items/store-item/entities/stock-track.schema';
+import {
+  ItemRackQty,
+  ItemRackQtyDocument,
+} from './entities/item-rack-qty.schema';
 
 type RackQueryDto = {
   page: number;
@@ -38,6 +42,9 @@ export class RacksService {
     // ✅ NEW
     @InjectConnection('store')
     private readonly conn: Connection,
+
+    @InjectModel(ItemRackQty.name, 'store')
+    private readonly ItemRackQtyModel: Model<ItemRackQtyDocument>,
 
     private readonly counterService: CounterService,
     private readonly rooms: RoomsService,
@@ -207,7 +214,7 @@ export class RacksService {
 
       created = await this.model.create([
         {
-          formet,
+          code: formet,
           name,
           isScrap: dto.isScrap,
           remark: dto.remark ?? '',
@@ -352,7 +359,12 @@ export class RacksService {
         },
         { new: true },
       );
-
+      await this.ItemRackQtyModel.create({
+        itemId: itemId,
+        itemName: '',
+        rackId: rackId,
+        rackCode: '',
+      });
       if (!rack) throw new BadRequestException('Rack already occupied');
 
       if (operatedBy) {
@@ -403,6 +415,10 @@ export class RacksService {
 
       released = res.modifiedCount > 0;
 
+      await this.ItemRackQtyModel.findByIdAndDelete({
+        rackId: rackId,
+        itemId: itemId,
+      });
       if (released && operatedBy) {
         const rack = await this.model
           .findById(rackId)

@@ -104,7 +104,7 @@ export class StoreItemNameService {
       const created = await this.model.create(
         [
           {
-            formatfalse,
+            code: formatfalse,
             name: dto.name,
             remark: dto.remark ?? '',
             createdBy: dto.createdBy ?? '',

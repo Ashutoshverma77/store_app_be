@@ -13,6 +13,10 @@ import {
   ReturnBulkDto,
 } from './dto/create-store-item-issue.dto';
 import { StockTrack } from '../store-item/entities/stock-track.schema';
+import {
+  ItemRackQty,
+  ItemRackQtyDocument,
+} from '../../locations/rack/entities/item-rack-qty.schema';
 
 // ✅ Adjust these imports/paths to your project
 // If you have class-based schema:
@@ -44,6 +48,9 @@ export class IssueService {
     // ✅ Stock Track model (change model name if yours differs)
     @InjectModel('StockTrack', 'store')
     private readonly stockTrackModel: Model<StockTrack>,
+
+    @InjectModel(ItemRackQty.name, 'store')
+    private readonly itemRackQtyModel: Model<ItemRackQtyDocument>,
   ) {}
 
   private n(v: any, fb = 0) {
@@ -803,6 +810,9 @@ export class IssueService {
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
 
+    const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
+    if (!storeRack) throw new BadRequestException('Store rack not found');
+
     const avail = Number((storeItem as any).stockAvailableQuantity || 0);
     if (avail < qty)
       throw new BadRequestException(`Insufficient stock. Available: ${avail}`);
@@ -820,8 +830,6 @@ export class IssueService {
 
     issue.allocations = issue.allocations || [];
     if (dto.rackId != '') {
-      const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
-
       if (storeRack) {
         // ✅ allocation log
         issue.allocations = issue.allocations || [];
@@ -860,6 +868,19 @@ export class IssueService {
             issuedBy: this.oid(issuedBy),
           } as any);
         }
+
+        var checkrack = await this.itemRackQtyModel.findOne({
+          rackId: rackOid,
+          itemId: itemOid,
+        });
+        var addavlRackdata = checkrack!.stockAvailableQuantity - qty;
+        var addissRackdata = checkrack!.stockIssueQuantity + qty;
+        await this.itemRackQtyModel.findByIdAndUpdate(checkrack?._id, {
+          $set: {
+            stockAvailableQuantity: addavlRackdata + reject,
+            stockIssueQuantity: addissRackdata,
+          },
+        });
       }
     }
     // ✅ auto close if fully issued
@@ -1011,6 +1032,7 @@ export class IssueService {
 
     const returnedBy = String(dto.returnedBy || '').trim();
     const itemId = String(dto.itemId || '').trim();
+    const rackId = String(dto.rackId || '').trim();
     const scrapRackId = String(dto.scrapRackId || '').trim();
 
     const goodQty = Number(dto.goodQty ?? 0);
@@ -1023,6 +1045,8 @@ export class IssueService {
       throw new BadRequestException('returnedBy invalid');
     if (!Types.ObjectId.isValid(itemId))
       throw new BadRequestException('itemId invalid');
+    if (!Types.ObjectId.isValid(rackId))
+      throw new BadRequestException('itemId invalid');
 
     if (!Number.isFinite(goodQty) || goodQty < 0)
       throw new BadRequestException('goodQty invalid');
@@ -1032,7 +1056,6 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
-
     // const st = String(issue.status || '')
     //   .trim()
     //   .toUpperCase();
@@ -1126,16 +1149,36 @@ export class IssueService {
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
 
+    const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
+    if (!storeRack) throw new BadRequestException('Store rack not found');
+
+    var checkrack = await this.itemRackQtyModel.findOne({
+      rackId: storeRack._id,
+      itemId: storeItem._id,
+    });
+    if (!checkrack) throw new BadRequestException('Store rack not found');
+
     const prevIssueStock = Number((storeItem as any).stockIssueQuantity || 0);
     (storeItem as any).stockIssueQuantity = Math.max(0, prevIssueStock - total);
 
     (storeItem as any).stockAvailableQuantity =
       Number((storeItem as any).stockAvailableQuantity || 0) + goodQty;
-
     (storeItem as any).stockscrapQuantity =
       Number((storeItem as any).stockscrapQuantity || 0) + scrapQty;
 
-    await storeItem.save();
+    const prevrackIssueStock = Number(
+      (checkrack as any).stockIssueQuantity || 0,
+    );
+    (checkrack as any).stockIssueQuantity = Math.max(
+      0,
+      prevrackIssueStock - total,
+    );
+
+    (checkrack as any).stockAvailableQuantity =
+      Number((checkrack as any).stockAvailableQuantity || 0) + goodQty;
+    (checkrack as any).stockscrapQuantity =
+      Number((checkrack as any).stockscrapQuantity || 0) + scrapQty;
+    await checkrack.save();
 
     if (scrapQty > 0) {
       const scrapRack = await this.rackModel.findById(this.oid(scrapRackId));

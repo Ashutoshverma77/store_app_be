@@ -6,7 +6,14 @@ import { RacksController } from './rack.controller';
 import { RacksService } from './rack.service';
 import { RackGateway } from './rack.gateway';
 import { CommonModule } from '../../common/common.module';
-import { StockTrack, StockTrackSchema } from '../../store-items/store-item/entities/stock-track.schema';
+import {
+  StockTrack,
+  StockTrackSchema,
+} from '../../store-items/store-item/entities/stock-track.schema';
+import {
+  ItemRackQty,
+  ItemRackQtySchema,
+} from './entities/item-rack-qty.schema';
 
 @Module({
   imports: [
@@ -15,6 +22,7 @@ import { StockTrack, StockTrackSchema } from '../../store-items/store-item/entit
     MongooseModule.forFeature(
       [
         { name: Rack.name, schema: RackSchema },
+        { name: ItemRackQty.name, schema: ItemRackQtySchema },
         { name: StockTrack.name, schema: StockTrackSchema },
       ],
       'store',

@@ -44,6 +44,18 @@ export class StoreNewItemGateway {
     client.emit('store:sameItemRacks:res', rows);
   }
 
+  @SubscribeMessage('store:sameItemRacksWithItemAndRack')
+  async getSameItemByRacks(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: any,
+  ) {
+    const itemId = String(body?.itemId || '').trim();
+    const rackId = String(body?.rackId || '').trim();
+    const rows = await this.s.getSameItemByRacks(itemId, rackId);
+
+    client.emit('store:sameItemRacksWithItemAndRack', rows);
+  }
+
   @SubscribeMessage('store:rackItem')
   async rackItem(@ConnectedSocket() client: Socket, @MessageBody() body: any) {
     const rackId = String(body?.rackId || '').trim();

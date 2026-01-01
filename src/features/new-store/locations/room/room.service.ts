@@ -143,7 +143,7 @@ export class RoomsService {
       created = await this.model.create(
         [
           {
-            format,
+           code: format,
             name,
             isScrap: dto.isScrap,
             remark: dto.remark ?? '',
@@ -207,7 +207,7 @@ export class RoomsService {
         const formet = this.counterService.format('RK', i);
 
         var rack = await this.rackmodel.create({
-          formet,
+         code: formet,
           name,
           isScrap,
           remark: remark ?? '',
