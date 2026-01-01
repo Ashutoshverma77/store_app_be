@@ -181,6 +181,14 @@ export class RacksService {
     return doc;
   }
 
+  async findRackByItem(itemId: string) {
+    console.log(itemId);
+    const doc = await this.model.find({ itemId: itemId }).lean();
+    console.log(doc);
+    if (!doc) throw new NotFoundException('Rack not found');
+    return doc;
+  }
+
   /* -------------------- REST WRITES -------------------- */
 
   async create(dto: CreateRackDto) {
@@ -191,12 +199,15 @@ export class RacksService {
       let created: any;
 
       const room = await this.rooms.findOne(dto.roomId);
-      const { code } = await this.counterService.nextCode('rack', 'RK');
-      const name = dto.name?.trim() || code;
+      const rack = await this.model.find({ roomId: room._id });
+
+      const formet = this.counterService.format('RK', rack.length + 1);
+      // const { code } = await this.counterService.nextCode('rack', 'RK');
+      const name = dto.name?.trim() || formet;
 
       created = await this.model.create([
         {
-          code,
+          formet,
           name,
           isScrap: dto.isScrap,
           remark: dto.remark ?? '',

@@ -17,11 +17,8 @@ export class StoreNewItem extends Document {
   itemNameCode: string;
 
   // Field 2: Rack
-  @Prop({ default: '' })
-  rackId: string;
-
-  @Prop({ default: '' })
-  rackName: string;
+  @Prop({ default: [] })
+  rackId: [string];
 
   // Field 3: Category/Subcategory (same collection; may point to category or subcategory)
   @Prop({ default: '' })

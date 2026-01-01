@@ -46,6 +46,16 @@ export class RackGateway {
     client.emit('store:findRackDataByRoomData', res);
   }
 
+  @SubscribeMessage('store:findRackDataByItemData')
+  async findRackByItem(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const id = String(body?.itemid ?? '');
+    const res = await this.racks.findRackByItem(id);
+    client.emit('store:findRackDataByItemData', res);
+  }
+
   @SubscribeMessage('store:findNotOccupiedRackPaged')
   async findNotOccupiedRackPaged(
     @ConnectedSocket() client: Socket,

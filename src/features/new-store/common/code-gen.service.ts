@@ -22,7 +22,7 @@ export class CounterService {
     return String.fromCharCode(65 + first) + String.fromCharCode(65 + second);
   }
 
-  private format(prefix: string, seq: number): string {
+  format(prefix: string, seq: number): string {
     const group = Math.floor((seq - 1) / 999); // 0 => AA, 1 => AB ...
     const num = ((seq - 1) % 999) + 1; // 1..999
     const letters = this.twoLettersFromGroup(group);

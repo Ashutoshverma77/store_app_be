@@ -219,8 +219,16 @@ export class StoreNewItemService {
   /* -------------------- CRUD -------------------- */
 
   async create(dto: CreateItemDto) {
-    const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
+    var checkItem = await this.model.find({
+      itemNameId: dto.itemNameId,
+      categoryId: dto.categoryId,
+    });
 
+    if (checkItem.length > 0) {
+      return { status: false, msg: 'Allready Exist Item', data: checkItem[0] };
+    }
+
+    const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
     const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
     const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
     var rack: any = {};
@@ -234,8 +242,15 @@ export class StoreNewItemService {
     var categorycheck =
       dto.subCategoryId == null ? dto.categoryId : dto.subCategoryId;
     const categoryLabel = await this.buildCategoryLabel(categorycheck ?? null);
-    const { code } = await this.seq.nextCode('itemname', 'IT');
-    const scrapCode = await this.seq.nextCode('itemname', 'ITS');
+
+    // const { code } = await this.seq.nextCode('itemname', 'IT');
+    // const scrapCode = await this.seq.nextCode('itemname', 'ITS');
+
+    var checkfalse = await this.model.find({ isScrap: false });
+    const formatfalse = this.seq.format('IT', checkfalse.length + 1);
+
+    var checktrue = await this.model.find({ isScrap: true });
+    const formattrue = this.seq.format('ITS', checktrue.length + 1);
     // const session = await
     try {
       let createdObj: any;
@@ -247,10 +262,9 @@ export class StoreNewItemService {
             itemNameId: this.oid(dto.itemNameId),
             itemName: itemName.name,
             itemNameCode: itemName.code,
-            itemCode: code,
+            itemCode: formatfalse,
 
-            rackId: dto.rackId != '' ? this.oid(dto.rackId) : '',
-            rackName: dto.rackId != '' ? (rack as any).name : '',
+            rackId: [],
 
             categoryId: categorycheck ? this.oid(categorycheck) : null,
             categoryLabel,
@@ -273,13 +287,19 @@ export class StoreNewItemService {
 
       const createdDoc = created?.[0];
       if (!createdDoc) throw new BadRequestException('Create failed');
-
+      if (dto.rackId != '') {
+        await this.model.findByIdAndUpdate(created?.[0]._id, {
+          $push: {
+            rackId: dto.rackId,
+          },
+        });
+        await this.occupyRackIfFree(
+          dto.rackId,
+          String(createdDoc._id),
+          String(createdDoc.itemName),
+        );
+      }
       // ✅ occupy rack (must remain consistent with item creation)
-      await this.occupyRackIfFree(
-        dto.rackId,
-        String(createdDoc._id),
-        String(createdDoc.itemName),
-      );
 
       // ✅ track: CREATE (qty=0)
       await this.track({
@@ -301,11 +321,10 @@ export class StoreNewItemService {
             itemNameId: this.oid(dto.itemNameId),
             itemName: itemName.name,
             itemNameCode: itemName.code,
-            itemCode: scrapCode.code,
+            itemCode: formattrue,
             isScrap: true,
 
-            rackId: this.oid(dto.scrapRackId),
-            rackName: (rackScrap as any).name ?? '',
+            rackId: [],
 
             categoryId: categorycheck ? this.oid(categorycheck) : null,
             categoryLabel,
@@ -329,12 +348,20 @@ export class StoreNewItemService {
       const createdDocScrap = createdScrap?.[0];
       if (!createdDocScrap) throw new BadRequestException('Create failed');
 
+      if (dto.rackId != '') {
+        await this.model.findByIdAndUpdate(createdScrap?.[0]._id, {
+          $push: {
+            rackId: dto.scrapRackId,
+          },
+        });
+        await this.occupyRackIfFree(
+          dto.scrapRackId,
+          String(createdDocScrap._id),
+          String(createdDocScrap.itemName),
+        );
+      }
+
       // ✅ occupy rack (must remain consistent with item creation)
-      await this.occupyRackIfFree(
-        dto.scrapRackId,
-        String(createdDocScrap._id),
-        String(createdDocScrap.itemName),
-      );
 
       // ✅ track: CREATE (qty=0)
       await this.track({
@@ -353,7 +380,7 @@ export class StoreNewItemService {
       createdObj = createdDoc.toObject();
       // });
 
-      return createdObj;
+      return { status: true, msg: 'Created', data: createdObj };
     } catch (e) {
       throw e;
     } finally {
@@ -384,8 +411,7 @@ export class StoreNewItemService {
       if (dto.rackId != null) {
         const rack = await this.rackModel.findById(dto.rackId).lean();
         if (!rack) throw new BadRequestException('Rack not found');
-        patch.rackId = this.oid(dto.rackId);
-        patch.rackName = (rack as any).name ?? '';
+        patch.rackId.push(this.oid(dto.rackId));
       }
 
       if (dto.categoryId !== undefined) {
@@ -404,12 +430,12 @@ export class StoreNewItemService {
       if (!prev) throw new BadRequestException('Item not found');
 
       // ✅ if rack change: occupy new rack then update then release old rack
-      const fromRackId = prev.rackId ? String(prev.rackId) : null;
-      const toRackId = dto.rackId ? String(dto.rackId) : null;
+      // const fromRackId = prev.rackId ? String(prev.rackId) : null;
+      // const toRackId = dto.rackId ? String(dto.rackId) : null;
 
-      if (toRackId && fromRackId && fromRackId !== toRackId) {
+      if (dto.rackId != null) {
         await this.occupyRackIfFree(
-          toRackId,
+          dto.rackId,
           String(prev._id),
           String(prev.itemName),
         );
@@ -421,18 +447,18 @@ export class StoreNewItemService {
 
       if (!updated) throw new BadRequestException('Update failed');
 
-      if (toRackId && fromRackId && fromRackId !== toRackId) {
-        const released = await this.releaseRackForItem(
-          fromRackId,
-          String(prev._id),
-          // session,
-        );
-        if (!released) {
-          throw new BadRequestException(
-            'Old rack release failed (data mismatch)',
-          );
-        }
-      }
+      // if (toRackId && fromRackId && fromRackId !== toRackId) {
+      // const released = await this.releaseRackForItem(
+      //   dto.rackId,
+      //   String(prev._id),
+      //   // session,
+      // );
+      // if (!released) {
+      //   throw new BadRequestException(
+      //     'Old rack release failed (data mismatch)',
+      //   );
+      // }
+      // }
 
       // ✅ track: EDIT (qty=0)
       await this.track({
@@ -495,7 +521,7 @@ export class StoreNewItemService {
           operatedBy: String(operatedBy),
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
-          rackId: item.rackId ?? '',
+          rackId: item.rackId[0] ?? '',
           refNo: String((item as any).itemNameCode ?? ''),
           note: `Item deleted: ${String((item as any).itemName ?? '')} (${String(
             (item as any).itemNameCode ?? '',
@@ -516,6 +542,7 @@ export class StoreNewItemService {
 
   async receiveItem(dto: {
     itemId: string;
+    rackId: string;
     qty: number;
     receivedBy: string;
     remark?: string;
@@ -523,9 +550,11 @@ export class StoreNewItemService {
     const itemId = String(dto.itemId || '').trim();
     const qty = Number(dto.qty || 0);
     const receivedBy = String(dto.receivedBy || '').trim();
+    const rackId = String(dto.rackId || '').trim();
 
     if (!itemId) throw new BadRequestException('itemId required');
     if (!receivedBy) throw new BadRequestException('receivedBy required');
+    if (!rackId) throw new BadRequestException('rackId required');
     if (!Number.isFinite(qty) || qty <= 0)
       throw new BadRequestException('qty must be > 0');
 
@@ -537,6 +566,10 @@ export class StoreNewItemService {
       const item = await this.model.findById(this.oid(itemId));
       // .session(session);
       if (!item) throw new BadRequestException('Item not found');
+
+      const rack = await this.model.findById(this.oid(rackId));
+      // .session(session);
+      if (!rack) throw new BadRequestException('Item not found');
 
       // 1) update stock
       await this.model.updateOne(
@@ -559,7 +592,7 @@ export class StoreNewItemService {
             lines: [
               {
                 itemId: item._id,
-                rackId: item.rackId ? this.oid(String(item.rackId)) : null,
+                rackId: rack._id,
                 qty,
               },
             ],
@@ -577,7 +610,7 @@ export class StoreNewItemService {
         operatedBy: String(operatedBy),
         itemId: String(item._id),
         categoryId: item.categoryId ?? '',
-        rackId: item.rackId ?? '',
+        rackId: item.rackId[0] ?? '',
         receivingId: String(receivingDoc?._id) ?? '',
         refNo: receivingDoc ? String(receivingDoc._id) : '',
         note: `Receive: +${qty}`,
@@ -764,7 +797,7 @@ export class StoreNewItemService {
           operatedBy: String(op),
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
-          rackId: item.rackId ?? '',
+          rackId: item.rackId[0] ?? '',
           refNo: String(item.itemNameCode ?? ''),
           note: `Transfer out: -${qty} to rack ${toRackId}`,
         });
@@ -775,7 +808,7 @@ export class StoreNewItemService {
           operatedBy: String(op),
           itemId: String(dest._id),
           categoryId: dest.categoryId ?? '',
-          rackId: dest.rackId ?? null,
+          rackId: dest.rackId[0] ?? null,
           refNo: String(dest.itemNameCode ?? ''),
           note: `Transfer in: +${qty} from rack ${fromRackId}`,
         });
@@ -920,15 +953,10 @@ export class StoreNewItemService {
     return true;
   }
 
-  private async releaseRackForItem(
-    rackId: string,
-    itemId: string,
-    session?: ClientSession,
-  ) {
+  private async releaseRackForItem(rackId: string, itemId: string) {
     const res = await this.rackModel.updateOne(
       { _id: this.oid(rackId), itemId: this.oid(itemId) },
       { $set: { isOccupied: false, itemId: null } },
-      { session },
     );
     return res.modifiedCount > 0;
   }

@@ -122,6 +122,7 @@ export class RoomsService {
     if (!doc) throw new NotFoundException('Room not found');
     return doc;
   }
+
   /* -------------------- REST WRITES -------------------- */
 
   async create(dto: CreateRoomDto) {
@@ -133,13 +134,16 @@ export class RoomsService {
       let created: any;
 
       // await session.withTransaction(async () => {
-      const { code } = await this.counterService.nextCode('room', 'RM');
-      const name = dto.name?.trim() || code;
+      // const { code } = await this.counterService.nextCode('room', 'RM');
+
+      var check = await this.model.find();
+      const format = this.counterService.format('RM', check.length + 1);
+      const name = dto.name?.trim() || format;
 
       created = await this.model.create(
         [
           {
-            code,
+            format,
             name,
             isScrap: dto.isScrap,
             remark: dto.remark ?? '',
@@ -184,10 +188,12 @@ export class RoomsService {
     // const session = await
     try {
       const { name, remark, createdBy, rackmake, isScrap } = dto;
-      const coderoom = await this.counterService.nextCode('room', 'RM');
+      // const coderoom = await this.counterService.nextCode('room', 'RM');
+      var check = await this.model.find();
+      const format = this.counterService.format('RM', check.length + 1);
       // Step 1: Create the room
       const newRoom = await this.model.create({
-        code: coderoom.code,
+        code: format,
         name,
         isScrap,
         remark: remark ?? '',
@@ -197,10 +203,11 @@ export class RoomsService {
       // Step 2: Create the racks
       // const racks = [];
       for (let i = 0; i < rackmake; i++) {
-        const { code } = await this.counterService.nextCode('rack', 'RK');
+        // const { code } = await this.counterService.nextCode('rack', 'RK');
+        const formet = this.counterService.format('RK', i);
 
         var rack = await this.rackmodel.create({
-          code,
+          formet,
           name,
           isScrap,
           remark: remark ?? '',

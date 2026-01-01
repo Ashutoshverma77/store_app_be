@@ -107,6 +107,7 @@ export class IssueService {
     issueId?: any;
     refNo?: string;
     note?: string;
+    rackId?: string;
   }) {
     const operatedBy = String(params.operatedBy || '').trim();
     if (!Types.ObjectId.isValid(operatedBy)) return;
@@ -126,11 +127,17 @@ export class IssueService {
         ? this.asOid(item._id)
         : null;
 
+    const rackId = params.rackId
+      ? this.asOid(params.rackId)
+      : item?._id
+        ? this.asOid(item._id)
+        : null;
+
     const refNo = params.refNo ?? (issue?.issNo ? String(issue.issNo) : '');
 
     // category/rack from item if present
     const categoryId = item?.categoryId ? this.asOid(item.categoryId) : null;
-    const rackId = item?.rackId ? this.asOid(item.rackId) : null;
+    // const rackId = item?.rackId ? this.asOid(item.rackId) : null;
 
     // Keep payload flexible — if your schema requires fields, enforce here.
     await this.stockTrackModel.create({
@@ -754,6 +761,7 @@ export class IssueService {
   /* ---------------- ISSUE ONE LINE ---------------- */
 
   async issueLine(issueId: string, dto: any) {
+    console.log(dto);
     const issuedBy = String(dto.issuedBy || '').trim();
     const itemId = String(dto.itemId || '').trim();
     const qty = Number(dto.qty || 0);
@@ -765,7 +773,7 @@ export class IssueService {
       throw new BadRequestException('itemId invalid');
     if (!Number.isFinite(qty) || qty <= 0)
       throw new BadRequestException('qty invalid');
-    if (!Number.isFinite(reject) || reject <= 0)
+    if (!Number.isFinite(reject) || reject < 0)
       throw new BadRequestException('qty invalid');
 
     const issue = await this.issueModel.findById(this.oid(issueId));
@@ -811,20 +819,48 @@ export class IssueService {
     (line as any).issuedRejectQty = issuedRejectQty + reject;
 
     issue.allocations = issue.allocations || [];
-    if ((storeItem as any).rackId != '') {
-      // ✅ allocation log
-      issue.allocations.push({
-        itemId: this.oid(itemId),
-        itemName: (storeItem as any).itemName || (line as any).itemName,
-        rackId: (storeItem as any).rackId,
-        rackName: (storeItem as any).rackName || '',
-        qty,
-        returnedQty: 0,
-        returnedGoodQty: 0,
-        returnedScrapQty: 0,
-        issuedAt: new Date(),
-        issuedBy: this.oid(issuedBy),
-      } as any);
+    if (dto.rackId != '') {
+      const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
+
+      if (storeRack) {
+        // ✅ allocation log
+        issue.allocations = issue.allocations || [];
+
+        const rackOid = this.oid((storeRack as any)._id);
+        const itemOid = this.oid(itemId);
+
+        // find existing allocation for same rack + same item
+        const existingIdx = issue.allocations.findIndex((a: any) => {
+          return (
+            String(a.rackId) === String(rackOid) &&
+            String(a.itemId) === String(itemOid)
+          );
+        });
+
+        if (existingIdx >= 0) {
+          // ✅ add qty into existing allocation
+          const prevQty = Number(issue.allocations[existingIdx].qty || 0);
+          issue.allocations[existingIdx].qty = prevQty + qty;
+
+          // optional: keep latest audit fields
+          issue.allocations[existingIdx].issuedAt = new Date();
+          issue.allocations[existingIdx].issuedBy = issuedBy;
+        } else {
+          // ✅ create new allocation
+          issue.allocations.push({
+            itemId: itemOid,
+            itemName: (storeItem as any).itemName || (line as any).itemName,
+            rackId: rackOid,
+            rackName: (storeRack as any).code || '',
+            qty,
+            returnedQty: 0,
+            returnedGoodQty: 0,
+            returnedScrapQty: 0,
+            issuedAt: new Date(),
+            issuedBy: this.oid(issuedBy),
+          } as any);
+        }
+      }
     }
     // ✅ auto close if fully issued
     // issue.status = this.computeCloseStatus(issue);
@@ -841,6 +877,7 @@ export class IssueService {
 
     // ✅ Track ISSUE (recommended signed negative)
     await this.track({
+      rackId: dto.rackId,
       type: 'ISSUE',
       qty: -qty,
       operatedBy: issuedBy,

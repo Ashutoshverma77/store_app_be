@@ -66,8 +66,8 @@ class IssueAllocation {
   @Prop({ default: Date.now })
   issuedAt: Date;
 
-  @Prop()
-  issuedBy?: string;
+  @Prop({ default: "" })
+  issuedBy: string;
 }
 
 @Schema({ timestamps: true, versionKey: false })

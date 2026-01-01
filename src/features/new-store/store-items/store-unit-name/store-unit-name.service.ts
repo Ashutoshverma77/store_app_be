@@ -9,11 +9,11 @@ import {
   ClientSession,
 } from 'mongoose';
 import {
-  CreateItemNameDto,
-  ItemNamePagedQueryDto,
-  UpdateItemNameDto,
-} from './dto/item-name.dto';
-import { StoreItemName } from './entities/store-item-name.schema';
+  CreateUnitNameDto,
+  UnitNamePagedQueryDto,
+  UpdateUnitNameDto,
+} from './dto/unit-name.dto';
+import { StoreUnitName } from './entities/store-unit-name.schema';
 import { CounterService } from '../../common/code-gen.service';
 import {
   StockTrack,
@@ -24,10 +24,10 @@ import {
 // ✅ Stock Stock Track (renamed from StockMovement)
 
 @Injectable()
-export class StoreItemNameService {
+export class StoreUnitNameService {
   constructor(
-    @InjectModel(StoreItemName.name, 'store')
-    private readonly model: Model<StoreItemName>,
+    @InjectModel(StoreUnitName.name, 'store')
+    private readonly model: Model<StoreUnitName>,
     private readonly seq: CounterService,
 
     // ✅ Track Model
@@ -77,7 +77,7 @@ export class StoreItemNameService {
           operatedBy: input.operatedBy,
 
           // master entity => no stock references
-          itemId: null,
+          unitId: null,
           categoryId: null,
           rackId: null,
           receivingId: null,
@@ -88,7 +88,7 @@ export class StoreItemNameService {
     );
   }
 
-  async create(dto: CreateItemNameDto) {
+  async create(dto: CreateUnitNameDto) {
     const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
 
     // const session = await
@@ -96,7 +96,7 @@ export class StoreItemNameService {
       let out: any;
 
       // await session.withTransaction(async () => {
-      // const { code } = await this.seq.nextCode('itemname', 'ITN');
+      // const { code } = await this.seq.nextCode('unitname', 'ITN');
 
       var checkfalse = await this.model.find();
       const formatfalse = this.seq.format('ITN', checkfalse.length + 1);
@@ -121,7 +121,7 @@ export class StoreItemNameService {
         qty: 0,
         operatedBy,
         refNo: String(formatfalse),
-        note: `ItemName created: ${String(dto.name ?? '')} (${String(formatfalse)})`,
+        note: `UnitName created: ${String(dto.name ?? '')} (${String(formatfalse)})`,
       });
 
       out = doc.toObject();
@@ -133,7 +133,7 @@ export class StoreItemNameService {
     }
   }
 
-  async update(dto: UpdateItemNameDto) {
+  async update(dto: UpdateUnitNameDto) {
     // if you have updatedBy, use that; otherwise reuse createdBy for audit
     const operatedBy = this.mustOperatorId(
       (dto as any).updatedBy ?? (dto as any).createdBy,
@@ -146,7 +146,7 @@ export class StoreItemNameService {
 
       // await session.withTransaction(async () => {
       const prev = await this.model.findById(dto.id);
-      if (!prev) throw new BadRequestException('ItemName not found');
+      if (!prev) throw new BadRequestException('UnitName not found');
 
       updated = await this.model
         .findByIdAndUpdate(
@@ -181,7 +181,7 @@ export class StoreItemNameService {
         qty: 0,
         operatedBy,
         refNo: String((updated as any).code ?? ''),
-        note: `ItemName updated: ${String((updated as any).name ?? '')}. ${
+        note: `UnitName updated: ${String((updated as any).name ?? '')}. ${
           changes.length ? changes.join(', ') : 'no field diff'
         }`,
       });
@@ -200,7 +200,7 @@ export class StoreItemNameService {
     try {
       // await session.withTransaction(async () => {
       const doc = await this.model.findById(id);
-      if (!doc) throw new BadRequestException('ItemName not found');
+      if (!doc) throw new BadRequestException('UnitName not found');
 
       await this.model.deleteOne({ _id: doc._id });
 
@@ -209,7 +209,7 @@ export class StoreItemNameService {
         qty: 0,
         operatedBy,
         refNo: String((doc as any).code ?? ''),
-        note: `ItemName deleted: ${String((doc as any).name ?? '')} (${String(
+        note: `UnitName deleted: ${String((doc as any).name ?? '')} (${String(
           (doc as any).code ?? '',
         )})`,
       });
@@ -221,12 +221,12 @@ export class StoreItemNameService {
     }
   }
 
-  async findAllPaged(q: ItemNamePagedQueryDto) {
+  async findAllPaged(q: UnitNamePagedQueryDto) {
     const page = Math.max(1, Number(q.page || 1));
     const limit = Math.min(300, Math.max(1, Number(q.limit || 12)));
     const skip = (page - 1) * limit;
 
-    const filter: FilterQuery<StoreItemName> = {};
+    const filter: FilterQuery<StoreUnitName> = {};
     const search = (q.search || '').trim();
     if (search) {
       filter.$or = [

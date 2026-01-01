@@ -23,7 +23,7 @@ export class StoreNewItemController {
   @Post()
   async create(@Body() dto: CreateItemDto) {
     const data = await this.s.create(dto);
-    return { status: true, msg: 'Created', data };
+    return ;
   }
 
   @Put(':id')

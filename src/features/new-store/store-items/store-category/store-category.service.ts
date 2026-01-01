@@ -84,8 +84,9 @@ export class StoreCategoryService {
     const operatedBy = this.getOperatorId(dto);
     if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
 
-    const { code } = await this.seq.nextCode('itemcategory', 'CT');
-
+    // const { code } = await this.seq.nextCode('itemcategory', 'CT');
+    var check = await this.model.find();
+    const format = this.seq.format('CT', check.length + 1);
     // const session = await
     try {
       let createdDoc: any;
@@ -94,10 +95,10 @@ export class StoreCategoryService {
       const created = await this.model.create(
         [
           {
-            code,
+            format,
             name: dto.name,
             remark: dto.remark ?? '',
-            parentId: dto.parentId ? dto.parentId : "",
+            parentId: dto.parentId ? dto.parentId : '',
             createdBy: dto.createdBy ?? '',
           },
         ],
@@ -111,7 +112,7 @@ export class StoreCategoryService {
         type: 'CREATE',
         operatedBy,
         categoryId: createdDoc._id,
-        refNo: createdDoc.code ?? code,
+        refNo: createdDoc.code ?? format,
         note: `Category created: ${createdDoc.name ?? ''} (${createdDoc.code ?? ''})`,
       });
       // });
