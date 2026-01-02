@@ -5,10 +5,10 @@ export type RoomDocument = Room & Document;
 
 @Schema({ timestamps: true })
 export class Room {
-  @Prop({ required: true, unique: true, index: true })
+  @Prop({ required: true, })
   code: string; // auto generated e.g. RM0001
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true,})
   name: string;
 
   @Prop({ default: false })

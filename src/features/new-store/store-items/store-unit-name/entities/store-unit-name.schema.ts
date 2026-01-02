@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class StoreUnitName extends Document {
-  @Prop({ required: true, unique: true, index: true })
+  @Prop({ required: true,  })
   code: string; // IT-AA001
 
   @Prop({ required: true, index: true })
@@ -17,4 +17,3 @@ export class StoreUnitName extends Document {
 }
 
 export const StoreUnitNameSchema = SchemaFactory.createForClass(StoreUnitName);
-StoreUnitNameSchema.index({ name: 1 });

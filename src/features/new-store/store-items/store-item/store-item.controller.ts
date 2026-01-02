@@ -35,7 +35,7 @@ export class StoreNewItemController {
     return { status: true, msg: 'Updated', data };
   }
 
-  @Patch(':id/transfer-rack')
+  @Put(':id/transfer-rack')
   async transferRack(
     @Param('id') itemId: string,
     @Body() dto: TransferRackDto,
@@ -44,7 +44,13 @@ export class StoreNewItemController {
     return { ok: true };
   }
 
-  @Patch(':id/transfer-item')
+  @Put('remove-rack')
+  async removeRack(@Body() dto: any) {
+    await this.s.removeRack(dto.toRackId, dto.createdBy);
+    return { ok: true };
+  }
+
+  @Put(':id/transfer-item')
   async transferItem(
     @Param('id') itemId: string,
     @Body() dto: TransferItemDto,

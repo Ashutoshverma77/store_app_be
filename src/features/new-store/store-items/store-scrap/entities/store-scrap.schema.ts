@@ -20,4 +20,4 @@ export class StoreScrap extends Document {
 }
 
 export const StoreScrapSchema = SchemaFactory.createForClass(StoreScrap);
-StoreScrapSchema.index({ name: 1 });
+

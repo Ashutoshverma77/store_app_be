@@ -72,7 +72,7 @@ class IssueAllocation {
 
 @Schema({ timestamps: true, versionKey: false })
 export class ItemIssue {
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true,  })
   issNo: string;
 
   @Prop({ default: '' })

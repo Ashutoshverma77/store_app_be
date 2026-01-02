@@ -56,6 +56,26 @@ export class RackGateway {
     client.emit('store:findRackDataByItemData', res);
   }
 
+  @SubscribeMessage('store:findRackDataByItemDataNonZeroStock')
+  async findRackByItemNonZero(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const id = String(body?.itemid ?? '');
+    const res = await this.racks.findRackByItemNonZero(id);
+    client.emit('store:findRackDataByItemDataNonZeroStock', res);
+  }
+
+  @SubscribeMessage('store:findRackStock')
+  async findRackStock(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const id = String(body?.rackid ?? '');
+    const res = await this.racks.findRackStock(id);
+    client.emit('store:findRackStock', res);
+  }
+
   @SubscribeMessage('store:findNotOccupiedRackPaged')
   async findNotOccupiedRackPaged(
     @ConnectedSocket() client: Socket,

@@ -67,8 +67,4 @@ export class StockTrack {
 
 export const StockTrackSchema = SchemaFactory.createForClass(StockTrack);
 
-// indexes
-StockTrackSchema.index({ itemId: 1, createdAt: -1 });
-StockTrackSchema.index({ type: 1, createdAt: -1 });
-StockTrackSchema.index({ issueId: 1, createdAt: -1 });
-StockTrackSchema.index({ receivingId: 1, createdAt: -1 });
+

@@ -204,7 +204,7 @@ export class RoomsService {
       // const racks = [];
       for (let i = 0; i < rackmake; i++) {
         // const { code } = await this.counterService.nextCode('rack', 'RK');
-        const formet = this.counterService.format('RK', i);
+        const formet = this.counterService.format('RK', i+1);
 
         var rack = await this.rackmodel.create({
          code: formet,

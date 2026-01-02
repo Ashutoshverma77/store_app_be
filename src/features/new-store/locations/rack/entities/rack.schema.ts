@@ -5,10 +5,10 @@ export type RackDocument = Rack & Document;
 
 @Schema({ timestamps: true })
 export class Rack {
-  @Prop({ required: true, unique: true, index: true })
+  @Prop({ required: true })
   code: string; // auto generated e.g. RK0001
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   name: string;
 
   @Prop({ default: '' })
@@ -18,7 +18,7 @@ export class Rack {
   roomId: string;
 
   // ✅ NEW
-  @Prop({ type: Boolean, default: false, index: true })
+  @Prop({ type: Boolean, default: false })
   isOccupied: boolean;
 
   // ✅ NEW (reference to item)
@@ -30,6 +30,9 @@ export class Rack {
 
   @Prop({ default: false })
   isScrap: boolean;
+
+  @Prop({ default: false })
+  isActive: boolean;
 
   @Prop({ default: '' })
   roomName: string; // optional denormalized

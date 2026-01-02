@@ -114,6 +114,7 @@ export class RacksService {
         { code: { $regex: search, $options: 'i' } },
         { remark: { $regex: search, $options: 'i' } },
         { roomName: { $regex: search, $options: 'i' } },
+        { isActive: false },
       ];
     }
 
@@ -154,6 +155,7 @@ export class RacksService {
     filter.$and.push({
       $or: [
         { isOccupied: false },
+        { isActive: false },
         { itemId: '' },
         { itemId: null },
         { itemId: { $exists: false } },
@@ -182,7 +184,7 @@ export class RacksService {
 
   async findRackByRoom(roomId: string) {
     const doc = await this.model
-      .find({ roomId: roomId, isOccupied: false })
+      .find({ roomId: roomId, isOccupied: false, isActive: false })
       .lean();
     if (!doc) throw new NotFoundException('Rack not found');
     return doc;
@@ -190,10 +192,116 @@ export class RacksService {
 
   async findRackByItem(itemId: string) {
     console.log(itemId);
-    const doc = await this.model.find({ itemId: itemId }).lean();
+    const doc = await this.model
+      .find({ itemId: itemId, isActive: false })
+      .lean();
     console.log(doc);
     if (!doc) throw new NotFoundException('Rack not found');
     return doc;
+  }
+
+  async findRackByItemNonZero(itemId: string) {
+    // 1) Racks mapped with this item (if your Rack model contains itemId)
+    const links = await this.model
+      .find({ itemId, isActive: false })
+      .select('_id')
+      .lean();
+
+    if (!links || links.length === 0) {
+      throw new NotFoundException('Rack not found');
+    }
+
+    const rackIds = links.map((x) => x._id);
+
+    // 2) Get stock docs only where stockAvailableQuantity > 0
+    const racksWithStock = await this.ItemRackQtyModel.find({
+      itemId,
+      rackId: { $in: rackIds },
+      stockAvailableQuantity: { $gt: 0 },
+    })
+      .select('rackId stockAvailableQuantity')
+      .lean();
+
+    if (!racksWithStock || racksWithStock.length === 0) {
+      // Optional: if you want to throw when no rack has stock
+      return [];
+      // or: throw new NotFoundException('No rack has available stock for this item');
+    }
+
+    // Build a quick lookup: rackId -> stockAvailableQuantity
+    const qtyByRackId = new Map<string, number>();
+    for (const s of racksWithStock) {
+      qtyByRackId.set(String(s.rackId), Number(s.stockAvailableQuantity ?? 0));
+    }
+
+    // Dedup rackIds from stock docs
+    const rackIdWithStock = Array.from(qtyByRackId.keys());
+
+    // 3) Fetch rack details
+    const racks = await this.model
+      .find({ _id: { $in: rackIdWithStock }, isActive: false })
+      .lean();
+
+    // 4) Attach stock to rack response
+    const rackWithStocks = racks.map((rack) => ({
+      _id: rack._id,
+      code: rack.code,
+      name: rack.name,
+      remark: rack.remark,
+      roomId: rack.roomId,
+      itemId: rack.itemId,
+      itemName: rack.itemName,
+      isScrap: rack.isScrap,
+      roomName: rack.roomName,
+      createdBy: rack.createdBy,
+      stockAvailableQuantity: qtyByRackId.get(String(rack._id)) ?? 0,
+    }));
+
+    return rackWithStocks;
+  }
+
+  async findRackStock(rackId: string) {
+    // 1) Racks mapped with this item (if your Rack model contains itemId)
+    var links = await this.model.findById(rackId).lean();
+
+    if (!links) {
+      throw new NotFoundException('Rack not found');
+    }
+
+    // const rackIds = links.map((x) => x._id);
+
+    // 2) Get stock docs only where stockAvailableQuantity > 0
+    const racksWithStock = await this.ItemRackQtyModel.findOne({
+      itemId: links.itemId,
+      rackId: rackId,
+      stockAvailableQuantity: { $gt: 0 },
+    })
+      .select('rackId stockAvailableQuantity')
+      .lean();
+
+    // if (!racksWithStock) {
+    //   throw new NotFoundException('Rack not found');
+    // }
+
+    // 4) Attach stock to rack response
+    const rackWithStocks = {
+      _id: links._id,
+      code: links.code,
+      name: links.name,
+      remark: links.remark,
+      roomId: links.roomId,
+      itemId: links.itemId,
+      itemName: links.itemName,
+      isScrap: links.isScrap,
+      isOccupied: links.isOccupied,
+      roomName: links.roomName,
+      createdBy: links.createdBy,
+      stockAvailableQuantity: !racksWithStock
+        ? 0
+        : racksWithStock.stockAvailableQuantity,
+    };
+
+    return rackWithStocks;
   }
 
   /* -------------------- REST WRITES -------------------- */
@@ -206,7 +314,7 @@ export class RacksService {
       let created: any;
 
       const room = await this.rooms.findOne(dto.roomId);
-      const rack = await this.model.find({ roomId: room._id });
+      const rack = await this.model.find({ roomId: room._id, isActive: false });
 
       const formet = this.counterService.format('RK', rack.length + 1);
       // const { code } = await this.counterService.nextCode('rack', 'RK');
@@ -216,7 +324,7 @@ export class RacksService {
         {
           code: formet,
           name,
-          isScrap: dto.isScrap,
+          isScrap: room.isScrap,
           remark: dto.remark ?? '',
           roomId: dto.roomId,
           roomName: room?.name ?? '',
@@ -261,6 +369,7 @@ export class RacksService {
         const room = await this.rooms.findOne(dto.roomId);
         patch.roomId = dto.roomId;
         patch.roomName = room?.name ?? '';
+        patch.isScrap = room?.isScrap ?? false;
       }
 
       updated = await this.model.findByIdAndUpdate(id, patch, {
@@ -352,7 +461,12 @@ export class RacksService {
       rack = await this.model.findOneAndUpdate(
         {
           _id: this.oid(rackId),
-          $or: [{ isOccupied: false }, { itemId: null }, { itemId: '' }],
+          $or: [
+            { isOccupied: false },
+            { itemId: null },
+            { itemId: '' },
+            { isActive: false },
+          ],
         },
         {
           $set: { isOccupied: true, itemId: this.oid(itemId) },
@@ -361,9 +475,9 @@ export class RacksService {
       );
       await this.ItemRackQtyModel.create({
         itemId: itemId,
-        itemName: '',
+        itemName: rack.itemName,
         rackId: rackId,
-        rackCode: '',
+        rackCode: rack.code,
       });
       if (!rack) throw new BadRequestException('Rack already occupied');
 
@@ -408,7 +522,7 @@ export class RacksService {
 
       // await session.withTransaction(async () => {
       const res = await this.model.updateOne(
-        { _id: this.oid(rackId), itemId: this.oid(itemId) },
+        { _id: this.oid(rackId), itemId: this.oid(itemId), isActive: false },
         { $set: { isOccupied: false, itemId: null } },
         // { session },
       );

@@ -3,10 +3,10 @@ import mongoose, { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class StoreCategory extends Document {
-  @Prop({ required: true, unique: true, index: true })
+  @Prop({ required: true,  })
   code: string; // CT-AA001
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   name: string;
 
   @Prop({ default: '' })
@@ -21,4 +21,4 @@ export class StoreCategory extends Document {
 }
 
 export const StoreCategorySchema = SchemaFactory.createForClass(StoreCategory);
-StoreCategorySchema.index({ name: 1, parentId: 1 });
+

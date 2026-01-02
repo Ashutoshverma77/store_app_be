@@ -62,6 +62,3 @@ export class StoreNewItem extends Document {
 }
 
 export const StoreNewItemSchema = SchemaFactory.createForClass(StoreNewItem);
-
-StoreNewItemSchema.index({ itemName: 1 });
-StoreNewItemSchema.index({ rackId: 1, itemNameId: 1 });

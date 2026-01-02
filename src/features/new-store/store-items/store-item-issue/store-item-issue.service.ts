@@ -630,8 +630,8 @@ export class IssueService {
         'Requested quantity cannot be less than the sum of approved, incoming, previous rejected, and reject quantities',
       );
     }
-    const avail = Number((storeItem as any).stockAvailableQuantity || 0);
-    (storeItem as any).stockAvailableQuantity = avail + approvedRejectQty;
+    // const avail = Number((storeItem as any).stockAvailableQuantity || 0);
+    // (storeItem as any).stockAvailableQuantity = avail + approvedRejectQty;
 
     await storeItem.save();
 
@@ -816,9 +816,9 @@ export class IssueService {
     const avail = Number((storeItem as any).stockAvailableQuantity || 0);
     if (avail < qty)
       throw new BadRequestException(`Insufficient stock. Available: ${avail}`);
-    var adddata = avail - qty;
+
     // ✅ stock updates
-    (storeItem as any).stockAvailableQuantity = adddata + reject;
+    (storeItem as any).stockAvailableQuantity = avail - qty;
     (storeItem as any).stockIssueQuantity =
       Number((storeItem as any).stockIssueQuantity || 0) + qty;
 
@@ -877,7 +877,7 @@ export class IssueService {
         var addissRackdata = checkrack!.stockIssueQuantity + qty;
         await this.itemRackQtyModel.findByIdAndUpdate(checkrack?._id, {
           $set: {
-            stockAvailableQuantity: addavlRackdata + reject,
+            stockAvailableQuantity: addavlRackdata,
             stockIssueQuantity: addissRackdata,
           },
         });
@@ -1165,6 +1165,8 @@ export class IssueService {
       Number((storeItem as any).stockAvailableQuantity || 0) + goodQty;
     (storeItem as any).stockscrapQuantity =
       Number((storeItem as any).stockscrapQuantity || 0) + scrapQty;
+
+    await storeItem.save();
 
     const prevrackIssueStock = Number(
       (checkrack as any).stockIssueQuantity || 0,
