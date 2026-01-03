@@ -33,8 +33,6 @@ export class IssueController {
     @Param('itemId') itemId: string,
     @Body() dto: any,
   ) {
-    console.log(dto);
-
     const out = await this.s.approveIssueLine(id, itemId, dto);
     return { status: true, msg: 'Line approved', data: out };
   }

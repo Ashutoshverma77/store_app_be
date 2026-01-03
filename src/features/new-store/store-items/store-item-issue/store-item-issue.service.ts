@@ -579,6 +579,8 @@ export class IssueService {
     const approvedBy = String(dto?.approvedBy || '').trim();
     const itemId = String(itemIds || '').trim();
     const mode = String(dto?.mode || 'add').toLowerCase() as 'add' | 'set';
+    const qty = Number(dto.approvedQty || 0);
+    const reject = Number(dto.approvedRejectQty || 0);
 
     if (!Types.ObjectId.isValid(approvedBy)) {
       throw new BadRequestException('approvedBy invalid');
@@ -616,9 +618,20 @@ export class IssueService {
       mode === 'add' ? 0 : prevRejected,
     );
 
-    if (mode === 'add' && incomingQty <= 0) {
+    const total = qty + reject;
+
+    if (mode === 'add' && total <= 0) {
       throw new BadRequestException('approvedQty must be > 0 for add');
     }
+
+    if (mode === 'add' && incomingQty < 0) {
+      throw new BadRequestException('approvedQty must be > 0 for add');
+    }
+
+    if (mode === 'add' && approvedRejectQty < 0) {
+      throw new BadRequestException('approvedRejectQty must be > 0 for add');
+    }
+
     if (mode === 'set' && incomingQty < 0) {
       throw new BadRequestException('approvedQty cannot be negative');
     }
@@ -768,17 +781,19 @@ export class IssueService {
   /* ---------------- ISSUE ONE LINE ---------------- */
 
   async issueLine(issueId: string, dto: any) {
-    console.log(dto);
     const issuedBy = String(dto.issuedBy || '').trim();
     const itemId = String(dto.itemId || '').trim();
     const qty = Number(dto.qty || 0);
     const reject = Number(dto.issuedRejectQty || 0);
+    const totalCheck = qty + reject;
 
     if (!Types.ObjectId.isValid(issuedBy))
       throw new BadRequestException('issuedBy invalid');
     if (!Types.ObjectId.isValid(itemId))
       throw new BadRequestException('itemId invalid');
-    if (!Number.isFinite(qty) || qty <= 0)
+    if (!Number.isFinite(totalCheck) || totalCheck <= 0)
+      throw new BadRequestException('qty invalid');
+    if (!Number.isFinite(qty) || qty < 0)
       throw new BadRequestException('qty invalid');
     if (!Number.isFinite(reject) || reject < 0)
       throw new BadRequestException('qty invalid');
@@ -799,14 +814,17 @@ export class IssueService {
 
     if (canIssue <= 0)
       throw new BadRequestException('Nothing approved to issue for this item');
+
     if (qty > canIssue)
       throw new BadRequestException(
         `Qty exceeds approved remaining (${canIssue})`,
       );
+
     if (reject > canIssue)
       throw new BadRequestException(
         'Reject quantity exceeds approved quantity',
       );
+
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
 

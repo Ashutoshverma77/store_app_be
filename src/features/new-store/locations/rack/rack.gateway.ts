@@ -3,13 +3,36 @@ import {
   MessageBody,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 import { RacksService } from './rack.service';
 
 @WebSocketGateway({ cors: { origin: '*', credentials: true } })
 export class RackGateway {
+  @WebSocketServer() server: any;
   constructor(private readonly racks: RacksService) {}
+
+  async broadcastAllRackList(body: any) {
+    const list = await this.racks.findAllPaged({
+      page: 1,
+      limit: 12,
+      search: '',
+      sort: 'createdAt',
+      roomId: body?.roomId ? String(body.roomId) : undefined,
+    });
+    this.server.emit('store:findAllRackPaged', list); // broadcast to all clients
+  }
+  async broadcastAllRackScrapList(body: any) {
+    const list = await this.racks.findAllPaged({
+      page: 1,
+      limit: 12,
+      search: '',
+      sort: 'createdAt',
+      roomId: body?.roomId ? String(body.roomId) : undefined,
+    });
+    this.server.emit('store:findAllScrapRackPaged', list); // broadcast to all clients
+  }
 
   @SubscribeMessage('store:findAllRackPaged')
   async findAllRackPaged(
@@ -20,10 +43,25 @@ export class RackGateway {
       page: Number(body?.page ?? 1),
       limit: Number(body?.limit ?? 12),
       search: String(body?.search ?? ''),
-      sort: String(body?.sort ?? '-createdAt'),
+      sort: String(body?.sort ?? 'createdAt'),
       roomId: body?.roomId ? String(body.roomId) : undefined,
     });
     client.emit('store:findAllRackPaged', res);
+  }
+
+  @SubscribeMessage('store:findAllScrapRackPaged')
+  async findAllScrapRackPaged(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.racks.findAllScrapRackPaged({
+      page: Number(body?.page ?? 1),
+      limit: Number(body?.limit ?? 12),
+      search: String(body?.search ?? ''),
+      sort: String(body?.sort ?? 'createdAt'),
+      roomId: body?.roomId ? String(body.roomId) : undefined,
+    });
+    client.emit('store:findAllScrapRackPaged', res);
   }
 
   @SubscribeMessage('store:findOneRack')
@@ -89,8 +127,6 @@ export class RackGateway {
       roomId: body?.roomId ? String(body.roomId) : undefined,
       allowItemId: body?.allowItemId ? String(body.allowItemId) : undefined,
     });
-
-    console.log(data);
 
     client.emit('store:findNotOccupiedRackPaged', data);
   }

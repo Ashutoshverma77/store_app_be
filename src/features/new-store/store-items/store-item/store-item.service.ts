@@ -667,6 +667,43 @@ export class StoreNewItemService {
       ];
     }
 
+    filter.isScrap = false;
+
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findScrapAllItemPaged(q: ItemPagedQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const filter: FilterQuery<StoreNewItem> = {};
+    if (q.rackId) filter.rackId = this.oid(q.rackId);
+    if (q.categoryId) filter.categoryId = this.oid(q.categoryId);
+
+    const search = (q.search || '').trim();
+    if (search) {
+      filter.$or = [
+        { itemName: { $regex: search, $options: 'i' } },
+        { itemNameCode: { $regex: search, $options: 'i' } },
+        { rackName: { $regex: search, $options: 'i' } },
+        { categoryLabel: { $regex: search, $options: 'i' } },
+        { unit: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    filter.isScrap = true;
+
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)

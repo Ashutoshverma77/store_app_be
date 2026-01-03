@@ -21,6 +21,15 @@ export class StoreNewItemGateway {
     client.emit('store:findAllItemPaged', data);
   }
 
+  @SubscribeMessage('store:findScrapAllItemPaged')
+  async findScrapAllItemPaged(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() q: ItemPagedQueryDto,
+  ) {
+    const data = await this.s.findScrapAllItemPaged(q || {});
+    client.emit('store:findScrapAllItemPaged', data);
+  }
+
   @SubscribeMessage('store:findOneItem')
   async findOne(
     @ConnectedSocket() client: Socket,

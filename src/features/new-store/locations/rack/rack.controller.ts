@@ -10,19 +10,29 @@ import {
 import { CreateRackDto } from './dto/create-rack.dto';
 import { UpdateRackDto } from './dto/update-rack.dto';
 import { RacksService } from './rack.service';
+import { RackGateway } from './rack.gateway';
 
 @Controller('api/racks')
 export class RacksController {
-  constructor(private readonly service: RacksService) {}
+  constructor(
+    private readonly service: RacksService,
+    private readonly gateway: RackGateway,
+  ) {}
 
   @Post()
   async create(@Body() dto: CreateRackDto) {
-    return await this.service.create(dto);
+    var data = await this.service.create(dto);
+    this.gateway.broadcastAllRackList(data.data.roomId).catch(() => {});
+    this.gateway.broadcastAllRackScrapList(data.data.roomId).catch(() => {});
+    return data;
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateRackDto) {
-    return this.service.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateRackDto) {
+    var data = await this.service.update(id, dto);
+    this.gateway.broadcastAllRackList(data.data.roomId).catch(() => {});
+    this.gateway.broadcastAllRackScrapList(data.data.roomId).catch(() => {});
+    return;
   }
 
   @Delete(':id')

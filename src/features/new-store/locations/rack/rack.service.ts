@@ -114,10 +114,43 @@ export class RacksService {
         { code: { $regex: search, $options: 'i' } },
         { remark: { $regex: search, $options: 'i' } },
         { roomName: { $regex: search, $options: 'i' } },
-        { isActive: false },
       ];
     }
 
+    filter.isScrap = false;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllScrapRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const filter: any = {};
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    filter.isScrap = true;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)
@@ -155,14 +188,13 @@ export class RacksService {
     filter.$and.push({
       $or: [
         { isOccupied: false },
-        { isActive: false },
         { itemId: '' },
         { itemId: null },
         { itemId: { $exists: false } },
         ...(allowOid ? [{ itemId: allowOid }] : []),
       ],
     });
-
+    filter.isScrap = false;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)

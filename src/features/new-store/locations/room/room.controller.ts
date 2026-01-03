@@ -2,24 +2,38 @@ import { Body, Controller, Delete, Param, Post, Put } from '@nestjs/common';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomsService } from './room.service';
+import { RoomGateway } from './room.gateway';
 
 @Controller('api')
 export class RoomsController {
-  constructor(private readonly service: RoomsService) {}
+  constructor(
+    private readonly service: RoomsService,
+    private readonly gateway: RoomGateway,
+  ) {}
 
   @Post('rooms')
-  create(@Body() dto: CreateRoomDto) {
-    return this.service.create(dto);
+  async create(@Body() dto: CreateRoomDto) {
+    var data = await this.service.create(dto);
+    this.gateway.broadcastAllRoomList().catch(() => {});
+    this.gateway.broadcastAllRoomScrapList().catch(() => {});
+    return data;
   }
 
   @Post('rackrooms')
-  createRackroom(@Body() dto: any) {
-    return this.service.createrackroom(dto);
+  async createRackroom(@Body() dto: any) {
+    var data = await this.service.createrackroom(dto);
+
+    this.gateway.broadcastAllRoomList().catch(() => {});
+    this.gateway.broadcastAllRoomScrapList().catch(() => {});
+    return data;
   }
 
   @Put('rooms:id')
-  update(@Param('id') id: string, @Body() dto: UpdateRoomDto) {
-    return this.service.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateRoomDto) {
+    var data = await this.service.update(id, dto);
+    this.gateway.broadcastAllRoomList().catch(() => {});
+    this.gateway.broadcastAllRoomScrapList().catch(() => {});
+    return data;
   }
 
   @Delete('rooms:id')

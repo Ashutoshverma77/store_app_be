@@ -91,7 +91,35 @@ export class RoomsService {
         { remark: { $regex: search, $options: 'i' } },
       ];
     }
+    filter.isScrap = false;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
 
+    return { rows, total, page, limit };
+  }
+
+  async findAllScrapRoomPaged(q: PagedQuery) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const filter: any = {};
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+      ];
+    }
+    filter.isScrap = true;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)
@@ -112,7 +140,13 @@ export class RoomsService {
   }
 
   async findAllRoomByScrap(isScrap: boolean) {
-    const doc = await this.model.find({ isScrap }).lean();
+    const doc = await this.model.find({ isScrap: true }).lean();
+    if (!doc) throw new NotFoundException('Room not found');
+    return doc;
+  }
+
+  async findAllRoomByGood(isScrap: boolean) {
+    const doc = await this.model.find({ isScrap: false }).lean();
     if (!doc) throw new NotFoundException('Room not found');
     return doc;
   }
@@ -143,7 +177,7 @@ export class RoomsService {
       created = await this.model.create(
         [
           {
-           code: format,
+            code: format,
             name,
             isScrap: dto.isScrap,
             remark: dto.remark ?? '',
@@ -204,10 +238,10 @@ export class RoomsService {
       // const racks = [];
       for (let i = 0; i < rackmake; i++) {
         // const { code } = await this.counterService.nextCode('rack', 'RK');
-        const formet = this.counterService.format('RK', i+1);
+        const formet = this.counterService.format('RK', i + 1);
 
         var rack = await this.rackmodel.create({
-         code: formet,
+          code: formet,
           name,
           isScrap,
           remark: remark ?? '',
