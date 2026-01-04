@@ -25,7 +25,7 @@ export class StoreNewItemGateway {
   }
 
   async broadcastAllScrapList() {
-    const list = await this.s.findAllPaged({
+    const list = await this.s.findScrapAllItemPaged({
       page: 1,
       limit: 12,
       search: '',
@@ -35,7 +35,7 @@ export class StoreNewItemGateway {
   }
 
   async broadcastAllReceiveList() {
-    const list = await this.s.findAllPaged({
+    const list = await this.s.findAllReceivePaged({
       page: 1,
       limit: 12,
       search: '',

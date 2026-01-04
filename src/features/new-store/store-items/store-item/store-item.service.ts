@@ -76,7 +76,7 @@ export class StoreNewItemService {
     private readonly userService: UserService,
 
     private readonly seq: CounterService,
-  ) {}
+  ) { }
 
   /* -------------------- helpers -------------------- */
 
@@ -622,6 +622,8 @@ export class StoreNewItemService {
         // { session },
       );
 
+      const now = new Date();
+      const updatedDate = new Date(now.getTime() + 330 * 60 * 1000);
       // 2) create receipt
       const receipt = await this.receiveModel.create(
         [
@@ -635,6 +637,7 @@ export class StoreNewItemService {
                 qty,
               },
             ],
+            createdAt: updatedDate,
           },
         ],
         // { session },
