@@ -4,12 +4,14 @@ import {
   MessageBody,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 import { IssueService } from './store-item-issue.service';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class IssueGateway {
+  @WebSocketServer() server: any;
   constructor(private readonly s: IssueService) {}
 
   @SubscribeMessage('store:issue:sources')
@@ -65,5 +67,18 @@ export class IssueGateway {
         },
       });
     }
+  }
+
+  async broadcastAllIssueList() {
+    const list = await this.s.findAllIssuesPaged({
+      search: '',
+      page: 1,
+      limit: 10,
+    });
+    this.server.emit('store:issues:list', {
+      reqId: '',
+      ok: true,
+      ...list,
+    }); // broadcast to all clients
   }
 }

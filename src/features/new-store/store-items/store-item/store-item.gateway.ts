@@ -3,14 +3,46 @@ import {
   MessageBody,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 import { StoreNewItemService } from './store-item.service';
-import { ItemPagedQueryDto } from './dto/store-item.dto';
+import { ItemPagedQueryDto, ReceivePagedQueryDto } from './dto/store-item.dto';
 
 @WebSocketGateway({ cors: true })
 export class StoreNewItemGateway {
+  @WebSocketServer() server: any;
   constructor(private readonly s: StoreNewItemService) {}
+
+  async broadcastAllList() {
+    const list = await this.s.findAllPaged({
+      page: 1,
+      limit: 12,
+      search: '',
+      sort: '-createdAt',
+    });
+    this.server.emit('store:findAllItemPaged', list); // broadcast to all clients
+  }
+
+  async broadcastAllScrapList() {
+    const list = await this.s.findAllPaged({
+      page: 1,
+      limit: 12,
+      search: '',
+      sort: '-createdAt',
+    });
+    this.server.emit('store:findScrapAllItemPaged', list); // broadcast to all clients
+  }
+
+  async broadcastAllReceiveList() {
+    const list = await this.s.findAllPaged({
+      page: 1,
+      limit: 12,
+      search: '',
+      sort: '-createdAt',
+    });
+    this.server.emit('store:findAllReceivePaged', list); // broadcast to all clients
+  }
 
   @SubscribeMessage('store:findAllItemPaged')
   async findAllPaged(
@@ -123,5 +155,17 @@ export class StoreNewItemGateway {
     const item = await this.s.scrapItem(body); // returns item or null
     console.log(item);
     client.emit('store:scrapItemAllData', item); // map or null
+  }
+
+  @SubscribeMessage('store:findAllReceivePaged')
+  async findAllReceivePaged(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() q: ReceivePagedQueryDto,
+  ) {
+    const data = await this.s.findAllReceivePaged(q || {});
+
+    console.log(data);
+
+    client.emit('store:findAllReceivePaged', data);
   }
 }

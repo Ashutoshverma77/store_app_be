@@ -41,13 +41,13 @@ CMD ["npm", "run","start:prod"]
 EXPOSE ${PORT}
 
 
-# docker build  --no-cache -t 192.168.13.72:5000/all_store_be_02012026 .      
-# docker run -d --name all_store_be_02012026 -p 80:80 all_store_be_31102025_image
+# docker build  --no-cache -t 192.168.13.72:5000/all_store_be_03012026 .      
+# docker run -d --name all_store_be_03012026 -p 80:80 all_store_be_31102025_image
 
-# docker tag all_store_be_31102025_image 192.168.13.72:5000/all_store_be_02012026
-# docker push 192.168.13.72:5000/all_store_be_02012026
-# docker pull 192.168.13.72:5000/all_store_be_02012026
-# docker run -d --name all_store_be_02012026 -p 8080:8080 192.168.13.72:5000/all_store_be_02012026
+# docker tag all_store_be_31102025_image 192.168.13.72:5000/all_store_be_03012026
+# docker push 192.168.13.72:5000/all_store_be_03012026
+# docker pull 192.168.13.72:5000/all_store_be_03012026
+# docker run -d --name all_store_be_03012026 -p 8080:8080 192.168.13.72:5000/all_store_be_03012026
 
 
 # docker pull 192.168.13.72:5000/rrcomplaint_frontend

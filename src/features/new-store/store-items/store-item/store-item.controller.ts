@@ -15,14 +15,20 @@ import {
   UpdateItemDto,
 } from './dto/store-item.dto';
 import { UploadBase64Dto } from 'src/features/store-item/schema/upload-image.dto';
+import { StoreNewItemGateway } from './store-item.gateway';
 
 @Controller('api/store/storeitems')
 export class StoreNewItemController {
-  constructor(private readonly s: StoreNewItemService) {}
+  constructor(
+    private readonly s: StoreNewItemService,
+    private readonly gateway: StoreNewItemGateway,
+  ) {}
 
   @Post()
   async create(@Body() dto: CreateItemDto) {
     const data = await this.s.create(dto);
+    this.gateway.broadcastAllList().catch(() => {});
+    this.gateway.broadcastAllScrapList().catch(() => {});
     return data;
   }
 
@@ -32,6 +38,8 @@ export class StoreNewItemController {
     @Body() dto: Omit<UpdateItemDto, 'id'>,
   ) {
     const data = await this.s.update({ ...dto, id });
+    this.gateway.broadcastAllList().catch(() => {});
+    this.gateway.broadcastAllScrapList().catch(() => {});
     return { status: true, msg: 'Updated', data };
   }
 
@@ -41,12 +49,16 @@ export class StoreNewItemController {
     @Body() dto: TransferRackDto,
   ) {
     await this.s.transferRack(itemId, dto.toRackId, dto.createdBy);
+    this.gateway.broadcastAllList().catch(() => {});
+    this.gateway.broadcastAllScrapList().catch(() => {});
     return { ok: true };
   }
 
   @Put('remove-rack')
   async removeRack(@Body() dto: any) {
     await this.s.removeRack(dto.toRackId, dto.createdBy);
+    this.gateway.broadcastAllList().catch(() => {});
+    this.gateway.broadcastAllScrapList().catch(() => {});
     return { ok: true };
   }
 
@@ -62,6 +74,8 @@ export class StoreNewItemController {
       dto.qty,
       dto.createdBy,
     );
+    this.gateway.broadcastAllList().catch(() => {});
+    this.gateway.broadcastAllScrapList().catch(() => {});
     return { ok: true };
   }
 
@@ -69,6 +83,9 @@ export class StoreNewItemController {
   async receive(@Body() dto: any) {
     // dto: { itemId, qty, receivedBy, remark? }
     await this.s.receiveItem(dto);
+    this.gateway.broadcastAllList().catch(() => {});
+    this.gateway.broadcastAllScrapList().catch(() => {});
+    this.gateway.broadcastAllReceiveList().catch(() => {});
     return { status: true, msg: 'Received successfully' };
   }
 

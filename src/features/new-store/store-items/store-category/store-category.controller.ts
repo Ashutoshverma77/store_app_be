@@ -1,14 +1,19 @@
 import { Body, Controller, Delete, Param, Post, Put } from '@nestjs/common';
 import { StoreCategoryService } from './store-category.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/store-category.dto';
+import { StoreCategoryGateway } from './store-category.gateway';
 
 @Controller('api/store/categories')
 export class StoreCategoryController {
-  constructor(private readonly s: StoreCategoryService) {}
+  constructor(
+    private readonly s: StoreCategoryService,
+    private readonly gateway: StoreCategoryGateway,
+  ) {}
 
   @Post()
   async create(@Body() dto: CreateCategoryDto) {
     const data = await this.s.create(dto);
+    this.gateway.broadcastAllRoomList().catch(() => {});
     return { status: true, msg: 'Created', data };
   }
 

@@ -39,6 +39,14 @@ export class ItemPagedQueryDto {
   @IsOptional() @IsString() categoryId?: string;
 }
 
+export class ReceivePagedQueryDto {
+  @IsOptional() page?: number;
+  @IsOptional() limit?: number;
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsString() sort?: string;
+}
+
+
 export class TransferRackDto {
   @IsMongoId()
   toRackId: string;

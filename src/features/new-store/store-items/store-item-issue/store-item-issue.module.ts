@@ -21,7 +21,11 @@ import {
   StockTrack,
   StockTrackSchema,
 } from '../store-item/entities/stock-track.schema';
-import { ItemRackQty, ItemRackQtySchema } from '../../locations/rack/entities/item-rack-qty.schema';
+import {
+  ItemRackQty,
+  ItemRackQtySchema,
+} from '../../locations/rack/entities/item-rack-qty.schema';
+import { StoreNewItemModule } from '../store-item/store-item.module';
 
 @Module({
   imports: [
@@ -37,6 +41,7 @@ import { ItemRackQty, ItemRackQtySchema } from '../../locations/rack/entities/it
       ],
       'store',
     ),
+    StoreNewItemModule,
   ],
   controllers: [IssueController],
   providers: [IssueService, IssueGateway],

@@ -27,6 +27,7 @@ import {
 import {
   CreateItemDto,
   ItemPagedQueryDto,
+  ReceivePagedQueryDto,
   UpdateItemDto,
 } from './dto/store-item.dto';
 import { v4 as uuid } from 'uuid';
@@ -218,6 +219,20 @@ export class StoreNewItemService {
     const imageUrl = `https://minioimg.rrispat.in/${this.bucketName}/${key}`;
     entity.imageUrl = imageUrl;
     await entity.save();
+    if (identity === 'item') {
+      var scrapentity = await this.model.findById(id);
+      if (!scrapentity) throw new NotFoundException('StoreItem not found');
+
+      var scrapChange = await this.model.findOne({
+        itemNameId: scrapentity!.itemNameId,
+        categoryId: scrapentity!.categoryId,
+        isScrap: true,
+      });
+
+      if (!scrapChange) throw new NotFoundException('StoreItem not found');
+      scrapChange.imageUrl = imageUrl;
+      await scrapChange.save();
+    }
 
     // Return a consistent shape
     return { imageUrl, entity };
@@ -239,13 +254,17 @@ export class StoreNewItemService {
     const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
     const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
     var rack: any = {};
-    if (dto.rackId == '') {
+    if (dto.rackId != '') {
       rack = await this.rackModel.findById(dto.rackId).lean();
       if (!rack) throw new BadRequestException('Rack not found');
     }
 
+    if (dto.scrapRackId != '') {
+      const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
+      if (!rackScrap) throw new BadRequestException('Rack not found');
+    }
+
     if (!itemName) throw new BadRequestException('ItemName not found');
-    if (!rackScrap) throw new BadRequestException('Rack not found');
     var categorycheck =
       dto.subCategoryId == null ? dto.categoryId : dto.subCategoryId;
     const categoryLabel = await this.buildCategoryLabel(categorycheck ?? null);
@@ -355,7 +374,7 @@ export class StoreNewItemService {
       const createdDocScrap = createdScrap?.[0];
       if (!createdDocScrap) throw new BadRequestException('Create failed');
 
-      if (dto.rackId != '') {
+      if (dto.scrapRackId != '') {
         await this.model.findByIdAndUpdate(createdScrap?.[0]._id, {
           $push: {
             rackId: dto.scrapRackId,
@@ -678,6 +697,40 @@ export class StoreNewItemService {
         .lean(),
       this.model.countDocuments(filter),
     ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllReceivePaged(q: ReceivePagedQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const filter: FilterQuery<StoreReceive> = {};
+
+    const search = (q.search || '').trim();
+    // if (search) {
+    //   filter.$or = [
+    //     // { itemName: { $regex: search, $options: 'i' } },
+    //   ];
+    // }
+
+    filter.isScrap = false;
+
+    var data = await this.receiveModel.find();
+
+    console.log(data);
+
+    const [rows, total] = await Promise.all([
+      await this.receiveModel
+        .find()
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+    console.log(rows);
 
     return { rows, total, page, limit };
   }
@@ -1007,8 +1060,9 @@ export class StoreNewItemService {
     // if (rackIds.length === 0) return [];
 
     const racks = await this.rackModel
-      .find({ itemId: itemId, _id: { $ne: this.oid(rackId), isActive: false } })
+      .find({ itemId: itemId, _id: { $ne: this.oid(rackId) }, isActive: false })
       .lean();
+    console.log(racks);
     return racks;
   }
 
