@@ -98,6 +98,19 @@ export class RacksService {
 
   /* -------------------- WS READS -------------------- */
 
+  async findRealAllRackPaged() {
+    // const page = Math.max(1, Number(q.page || 1));
+    // const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    // const skip = (page - 1) * limit;
+
+    var rows = await this.model
+      .find()
+
+      .lean();
+
+    return rows;
+  }
+
   async findAllPaged(q: RackQueryDto) {
     const page = Math.max(1, Number(q.page || 1));
     const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));

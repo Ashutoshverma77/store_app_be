@@ -34,6 +34,15 @@ export class RackGateway {
     this.server.emit('store:findAllScrapRackPaged', list); // broadcast to all clients
   }
 
+  @SubscribeMessage('store:findRealAllRackPaged')
+  async findRealAllRackPaged(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.racks.findRealAllRackPaged();
+    client.emit('store:findRealAllRackPaged', res);
+  }
+
   @SubscribeMessage('store:findAllRackPaged')
   async findAllRackPaged(
     @MessageBody() body: any,

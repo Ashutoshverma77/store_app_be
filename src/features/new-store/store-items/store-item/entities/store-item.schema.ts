@@ -31,6 +31,9 @@ export class StoreNewItem extends Document {
   @Prop({ default: '' })
   unit: string;
 
+  @Prop({ default: '' })
+  unitId: string;
+
   // Field 5:
   @Prop({ default: '' })
   description: string;

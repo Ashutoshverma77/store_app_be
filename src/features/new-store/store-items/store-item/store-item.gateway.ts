@@ -44,6 +44,15 @@ export class StoreNewItemGateway {
     this.server.emit('store:findAllReceivePaged', list); // broadcast to all clients
   }
 
+  @SubscribeMessage('store:findRealAllItemPaged')
+  async findRealAllPaged(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() q: ItemPagedQueryDto,
+  ) {
+    const data = await this.s.findRealAllPaged();
+    client.emit('store:findRealAllItemPaged', data);
+  }
+
   @SubscribeMessage('store:findAllItemPaged')
   async findAllPaged(
     @ConnectedSocket() client: Socket,
@@ -162,6 +171,7 @@ export class StoreNewItemGateway {
     @ConnectedSocket() client: Socket,
     @MessageBody() q: ReceivePagedQueryDto,
   ) {
+    console.log(q);
     const data = await this.s.findAllReceivePaged(q || {});
 
     console.log(data);

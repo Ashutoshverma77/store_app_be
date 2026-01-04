@@ -38,6 +38,7 @@ import {
   ItemRackQty,
   ItemRackQtyDocument,
 } from '../../locations/rack/entities/item-rack-qty.schema';
+import { StoreUnitName } from '../store-unit-name/entities/store-unit-name.schema';
 
 @Injectable()
 export class StoreNewItemService {
@@ -48,6 +49,9 @@ export class StoreNewItemService {
 
     @InjectModel(StoreItemName.name, 'store')
     private readonly itemNameModel: Model<StoreItemName>,
+
+    @InjectModel(StoreUnitName.name, 'store')
+    private readonly itemUnitModel: Model<StoreUnitName>,
 
     @InjectModel(StoreCategory.name, 'store')
     private readonly catModel: Model<StoreCategory>,
@@ -252,7 +256,8 @@ export class StoreNewItemService {
 
     const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
     const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
-    const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
+    const unitName = await this.itemUnitModel.findById(dto.unit).lean();
+    // const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
     var rack: any = {};
     if (dto.rackId != '') {
       rack = await this.rackModel.findById(dto.rackId).lean();
@@ -265,6 +270,7 @@ export class StoreNewItemService {
     }
 
     if (!itemName) throw new BadRequestException('ItemName not found');
+    if (!unitName) throw new BadRequestException('ItemName not found');
     var categorycheck =
       dto.subCategoryId == null ? dto.categoryId : dto.subCategoryId;
     const categoryLabel = await this.buildCategoryLabel(categorycheck ?? null);
@@ -295,7 +301,8 @@ export class StoreNewItemService {
             categoryId: categorycheck ? this.oid(categorycheck) : null,
             categoryLabel,
 
-            unit: dto.unit ?? '',
+            unit: unitName.name ?? '',
+            unitId: unitName._id ?? '',
             description: dto.description ?? '',
 
             totalStockQuantity: 0,
@@ -355,7 +362,8 @@ export class StoreNewItemService {
             categoryId: categorycheck ? this.oid(categorycheck) : null,
             categoryLabel,
 
-            unit: dto.unit ?? '',
+            unit: unitName.name ?? '',
+            unitId: unitName._id ?? '',
             description: dto.description ?? '',
 
             totalStockQuantity: 0,
@@ -666,6 +674,12 @@ export class StoreNewItemService {
 
   /* -------------------- Reads -------------------- */
 
+  async findRealAllPaged() {
+    var rows = await this.model.find().lean();
+
+    return rows;
+  }
+
   async findAllPaged(q: ItemPagedQueryDto) {
     const page = Math.max(1, Number(q.page || 1));
     const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
@@ -717,9 +731,9 @@ export class StoreNewItemService {
 
     filter.isScrap = false;
 
-    var data = await this.receiveModel.find();
+    // var data = await this.receiveModel.find();
 
-    console.log(data);
+    // console.log(data);
 
     const [rows, total] = await Promise.all([
       await this.receiveModel
@@ -728,9 +742,8 @@ export class StoreNewItemService {
         .skip(skip)
         .limit(limit)
         .lean(),
-      this.model.countDocuments(filter),
+      await this.receiveModel.countDocuments(),
     ]);
-    console.log(rows);
 
     return { rows, total, page, limit };
   }
