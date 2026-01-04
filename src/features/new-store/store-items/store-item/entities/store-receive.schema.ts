@@ -26,7 +26,7 @@ export class StoreReceive {
   @Prop({ type: [StoreReceiveLineSchema], default: [] })
   lines: StoreReceiveLine[];
 
-  @Prop({ type: String, default: Date })
+  @Prop({ default: Date })
   createdAt?: Date;
 }
 export const StoreReceiveSchema = SchemaFactory.createForClass(StoreReceive);

@@ -128,7 +128,7 @@ export class RacksService {
       });
     }
 
-    console.log(rowsQtyData);
+    // console.log(rowsQtyData);
     return rowsQtyData;
   }
 
