@@ -102,13 +102,34 @@ export class RacksService {
     // const page = Math.max(1, Number(q.page || 1));
     // const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
     // const skip = (page - 1) * limit;
+    var rowsQtyData: any = [];
+    var rows = await this.model.find().lean();
+    for (var data of rows) {
+      var rowsQyt = await this.ItemRackQtyModel.findOne({
+        itemId: data.itemId,
+        rackId: data._id,
+      }).lean();
 
-    var rows = await this.model
-      .find()
+      rowsQtyData.push({
+        _id: data._id,
+        code: data.code,
+        name: data.name,
+        remark: data.remark,
+        roomId: data.roomId,
+        itemId: data.itemId,
+        itemName: data.itemName == '' ? 'Not Assign' : data.itemName,
+        isScrap: data.isScrap,
+        roomName: data.roomName,
+        createdBy: data.createdBy,
+        totalStockQuantity: rowsQyt?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: rowsQyt?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: rowsQyt?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: rowsQyt?.stockscrapQuantity ?? 0,
+      });
+    }
 
-      .lean();
-
-    return rows;
+    console.log(rowsQtyData);
+    return rowsQtyData;
   }
 
   async findAllPaged(q: RackQueryDto) {

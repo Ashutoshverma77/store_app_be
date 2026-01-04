@@ -729,23 +729,45 @@ export class StoreNewItemService {
     //   ];
     // }
 
-    filter.isScrap = false;
-
-    // var data = await this.receiveModel.find();
+    var datatotal = await this.receiveModel.find();
 
     // console.log(data);
+    var receiveData: any = [];
+    var data = await this.receiveModel
+      .find()
+      .sort(this.sortObj(q.sort))
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-    const [rows, total] = await Promise.all([
-      await this.receiveModel
-        .find()
-        .sort(this.sortObj(q.sort))
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      await this.receiveModel.countDocuments(),
-    ]);
+    for (var rec of data) {
+      var user = await this.userService.findById(rec.receivedBy);
+      var item = await this.model.findById(rec.lines[0].itemId);
+      var rack = await this.rackModel.findById(rec.lines[0].rackId);
+      receiveData.push({
+        receivedBy: user?.name,
+        itemId: item?.itemName,
+        rackId: rack?.code,
+        qty: rec.lines[0].qty,
+        remark: rec?.remark,
+        createdAt: rec.createdAt,
+      });
+    }
 
-    return { rows, total, page, limit };
+    var total = datatotal.length;
+
+    // const [rows, total] = await Promise.all([
+    // var data =  await this.receiveModel
+    //     .find()
+    //     .sort(this.sortObj(q.sort))
+    //     .skip(skip)
+    //     .limit(limit)
+    //     .lean(),
+
+    //   await this.receiveModel.countDocuments(),
+    // ]);
+
+    return { rows: receiveData, total, page, limit };
   }
 
   async findScrapAllItemPaged(q: ItemPagedQueryDto) {

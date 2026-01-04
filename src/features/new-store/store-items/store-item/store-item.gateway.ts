@@ -171,7 +171,8 @@ export class StoreNewItemGateway {
     @ConnectedSocket() client: Socket,
     @MessageBody() q: ReceivePagedQueryDto,
   ) {
-    console.log(q);
+    // console.log(q);
+
     const data = await this.s.findAllReceivePaged(q || {});
 
     console.log(data);
