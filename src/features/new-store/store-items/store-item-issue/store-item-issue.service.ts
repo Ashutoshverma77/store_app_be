@@ -1572,27 +1572,75 @@ export class IssueService {
     // Fetch issues from the database
     const issues = await this.issueModel.find({ $or: or }).lean();
 
-    // Filter lines to match the itemId in the lines array
-    const filteredIssues = issues.map((issue) => {
-      // Filter lines that match the itemId
-      const filteredLines = issue.lines.filter((line) => {
-        const lineItemId = line.itemId?.toString(); // Convert ObjectId to string if necessary
-        return lineItemId === itemId;
-      });
+    const filteredIssues = issues
+      .map((issue) => {
+        const filteredLines = (issue.lines ?? []).filter((line) => {
+          const lineItemId =
+            line.itemId?.toString?.() ?? String(line.itemId ?? '');
+          if (lineItemId !== itemId) return false;
 
-      // Return the issue with only the matching lines
-      return { ...issue, lines: filteredLines };
-    });
+          // Safely coerce numbers (avoid undefined / null)
+          const requestedQty = Number(line.requestedQty ?? 0);
+          const approvedQty = Number(line.approvedQty ?? 0);
+          const issuedQty = Number(line.issuedQty ?? 0);
+          const returnQty = Number(line.returnQty ?? 0);
+          const scrapQty = Number(line.scrapQty ?? 0);
+          const approvedRejectQty = Number(line.approvedRejectQty ?? 0);
+          const issuedRejectQty = Number(line.issuedRejectQty ?? 0);
+
+          // "Completed" condition as per your rules
+          const isCompleted =
+            requestedQty === approvedQty + approvedRejectQty &&
+            approvedQty === issuedQty + issuedRejectQty &&
+            issuedQty === returnQty + scrapQty;
+
+          // ✅ Keep ONLY non-completed lines
+          return !isCompleted;
+        });
+
+        return { ...issue, lines: filteredLines };
+      })
+      // ✅ Remove issues that have no remaining lines
+      .filter((issue) => issue.lines.length > 0);
 
     return filteredIssues;
   }
 
+  // async findIssuesByLineItemId(itemId: string) {
+  //   // Prepare the query to handle different storage formats of itemId
+  //   const or: any[] = [
+  //     { 'lines.itemId': itemId }, // if stored as string
+  //     { 'lines.itemId.$oid': itemId }, // if stored as { $oid: "..." }
+  //   ];
+
+  //   // If itemId is a valid ObjectId, we also check for ObjectId storage
+  //   if (Types.ObjectId.isValid(itemId)) {
+  //     or.unshift({ 'lines.itemId': new Types.ObjectId(itemId) }); // if stored as ObjectId
+  //   }
+
+  //   // Fetch issues from the database
+  //   const issues = await this.issueModel.find({ $or: or }).lean();
+
+  //   // Filter lines to match the itemId in the lines array
+  //   const filteredIssues = issues.map((issue) => {
+  //     // Filter lines that match the itemId
+  //     const filteredLines = issue.lines.filter((line) => {
+  //       const lineItemId = line.itemId?.toString(); // Convert ObjectId to string if necessary
+  //       return lineItemId === itemId;
+  //     });
+
+  //     // Return the issue with only the matching lines
+  //     return { ...issue, lines: filteredLines };
+  //   });
+
+  //   return filteredIssues;
+  // }
+
   /* ---------------- FIND PAGED ---------------- */
 
   async findAllIssuesPaged(dto: any) {
-    const page = Math.max(1, Number(dto?.page || 1));
-    const limitRaw = Number(dto?.limit || 10);
-    const limit = Math.min(50, Math.max(1, limitRaw));
+    const page = Math.max(1, Number(dto.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(dto.limit || 12)));
     const skip = (page - 1) * limit;
 
     const search = String(dto?.search || '').trim();
@@ -1616,28 +1664,14 @@ export class IssueService {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select({
-          issNo: 1,
-          reason: 1,
-          status: 1,
-          createdAt: 1,
-          lines: 1,
-        })
         .lean(),
     ]);
 
-    const totalPages = Math.max(1, Math.ceil(total / limit));
-
     return {
-      rows: (rows || []).map((x: any) => ({ ...x, _id: String(x._id) })),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNext: page < totalPages,
-        hasPrev: page > 1,
-      },
+      rows,
+      total,
+      page,
+      limit: 10,
     };
   }
 }

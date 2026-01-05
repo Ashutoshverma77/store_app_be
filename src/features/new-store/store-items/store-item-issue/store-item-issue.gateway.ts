@@ -40,45 +40,15 @@ export class IssueGateway {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: any,
   ) {
-    const reqId = String(body?.reqId || '').trim();
+    const data = await this.s.findAllIssuesPaged(body);
 
-    try {
-      const data = await this.s.findAllIssuesPaged(body);
-
-      // respond on SAME event name (like your other ws)
-      client.emit('store:issues:list', {
-        reqId,
-        ok: true,
-        ...data,
-      });
-    } catch (e: any) {
-      client.emit('store:issues:list', {
-        reqId,
-        ok: false,
-        message: e?.message || 'Failed to load issues',
-        rows: [],
-        meta: {
-          page: 1,
-          limit: 10,
-          total: 0,
-          totalPages: 1,
-          hasNext: false,
-          hasPrev: false,
-        },
-      });
-    }
+    // respond on SAME event name (like your other ws)
+    client.emit('store:issues:list', data);
   }
 
   async broadcastAllIssueList() {
-    const list = await this.s.findAllIssuesPaged({
-      search: '',
-      page: 1,
-      limit: 10,
-    });
-    this.server.emit('store:issues:list', {
-      reqId: '',
-      ok: true,
-      ...list,
-    }); // broadcast to all clients
+    var body = { sort: '-createdAt', search: '', page: 1, limit: 10 };
+    const list = await this.s.findAllIssuesPaged(body);
+    this.server.emit('store:issues:list', list); // broadcast to all clients
   }
 }
