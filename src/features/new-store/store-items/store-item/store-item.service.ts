@@ -854,14 +854,18 @@ export class StoreNewItemService {
 
     await this.rackModel.updateOne(
       { _id: this.oid(toRackId), itemId: this.oid(itemId), isActive: false },
-      { $set: { isOccupied: false, itemId: '' } },
+      { $set: { isOccupied: false, itemId: '', itemName: '' } },
       // { session },
     );
 
-    await this.itemRackQtyModel.findByIdAndDelete({
+    var data = await this.itemRackQtyModel.find({
       rackId: toRackId,
       itemId: itemId,
     });
+
+    for (var qty of data) {
+      await this.itemRackQtyModel.findByIdAndDelete(qty._id);
+    }
 
     await this.track({
       type: 'ADJUST',
@@ -1144,10 +1148,15 @@ export class StoreNewItemService {
             { $set: { isOccupied: false, itemId: '' } },
             // { session },
           );
-          await this.itemRackQtyModel.findByIdAndDelete({
+          var data = await this.itemRackQtyModel.find({
             rackId: fromRackId,
             itemId: itemId,
           });
+
+          for (var qty of data) {
+            await this.itemRackQtyModel.findByIdAndDelete(qty._id);
+          }
+
           throw new BadRequestException(
             'Old rack release failed (data mismatch)',
           );
@@ -1237,10 +1246,15 @@ export class StoreNewItemService {
       { $set: { isOccupied: false, itemId: '' } },
     );
 
-    await this.itemRackQtyModel.findByIdAndDelete({
+    var data = await this.itemRackQtyModel.find({
       rackId: rackId,
       itemId: itemId,
     });
+
+    for (var qty of data) {
+      await this.itemRackQtyModel.findByIdAndDelete(qty._id);
+    }
+
     return res.modifiedCount > 0;
   }
 

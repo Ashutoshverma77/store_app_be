@@ -378,7 +378,7 @@ export class RoomsService {
         prifix = 'SM';
       }
       const format = this.counterService.format(
-        `ROOM-${prifix}-`,
+        `ROOM-${prifix}`,
         check.length + 1,
       );
       // Step 1: Create the room
@@ -395,7 +395,7 @@ export class RoomsService {
       for (let i = 0; i < rackmake; i++) {
         // const { code } = await this.counterService.nextCode('rack', 'RK');
         const formet = this.counterService.format(
-          `RK${codeNo}-${prifix}-`,
+          `RK${codeNo}-${prifix}`,
           i + 1,
         );
 

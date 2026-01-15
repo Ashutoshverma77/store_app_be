@@ -696,10 +696,14 @@ export class RacksService {
 
       released = res.modifiedCount > 0;
 
-      await this.ItemRackQtyModel.findByIdAndDelete({
+      var data = await this.ItemRackQtyModel.find({
         rackId: rackId,
         itemId: itemId,
       });
+      for (var qty of data) {
+        await this.ItemRackQtyModel.findByIdAndDelete(qty._id);
+      }
+
       if (released && operatedBy) {
         const rack = await this.model
           .findById(rackId)
