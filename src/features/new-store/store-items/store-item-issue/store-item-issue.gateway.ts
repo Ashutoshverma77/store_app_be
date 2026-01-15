@@ -26,11 +26,11 @@ export class IssueGateway {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: any,
   ) {
-    console.log(body);
+    // console.log(body);
     const itemId = String(body?.issueId || '').trim();
     const data = await this.s.findIssuesByLineItemId(itemId);
 
-    console.log(data);
+    // console.log(data);
 
     client.emit('store:issueByIdItem', data);
   }

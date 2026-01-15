@@ -1,7 +1,7 @@
 import { IsInt, IsMongoId, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateItemDto {
-  @IsString() itemNameId: string;
+  // @IsString() itemNameId: string;
   @IsString() rackId: string;
   @IsString() scrapRackId: string;
 
@@ -18,7 +18,7 @@ export class CreateItemDto {
 export class UpdateItemDto {
   @IsString() id: string;
 
-  @IsOptional() @IsString() itemNameId?: string;
+  // @IsOptional() @IsString() itemNameId?: string;
   @IsOptional() @IsString() rackId?: string;
   @IsOptional() @IsString() categoryId?: string | null;
 

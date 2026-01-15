@@ -76,7 +76,7 @@ export class StoreNewItemService {
     private readonly userService: UserService,
 
     private readonly seq: CounterService,
-  ) { }
+  ) {}
 
   /* -------------------- helpers -------------------- */
 
@@ -228,7 +228,7 @@ export class StoreNewItemService {
       if (!scrapentity) throw new NotFoundException('StoreItem not found');
 
       var scrapChange = await this.model.findOne({
-        itemNameId: scrapentity!.itemNameId,
+        // itemNameId: scrapentity!.itemNameId,
         categoryId: scrapentity!.categoryId,
         isScrap: true,
       });
@@ -246,7 +246,7 @@ export class StoreNewItemService {
 
   async create(dto: CreateItemDto) {
     var checkItem = await this.model.find({
-      itemNameId: dto.itemNameId,
+      // itemNameId: dto.itemNameId,
       categoryId: dto.categoryId,
     });
 
@@ -255,7 +255,7 @@ export class StoreNewItemService {
     }
 
     const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
-    const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
+    // const itemName = await this.itemNameModel.findById(dto.itemNameId).lean();
     const unitName = await this.itemUnitModel.findById(dto.unit).lean();
     // const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
     var rack: any = {};
@@ -268,9 +268,11 @@ export class StoreNewItemService {
       const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
       if (!rackScrap) throw new BadRequestException('Rack not found');
     }
+    const categoryName = await this.catModel.findById(dto.categoryId).lean();
 
-    if (!itemName) throw new BadRequestException('ItemName not found');
+    // if (!itemName) throw new BadRequestException('ItemName not found');
     if (!unitName) throw new BadRequestException('ItemName not found');
+    if (!categoryName) throw new BadRequestException('ItemName not found');
     var categorycheck =
       dto.subCategoryId == null ? dto.categoryId : dto.subCategoryId;
     const categoryLabel = await this.buildCategoryLabel(categorycheck ?? null);
@@ -291,9 +293,9 @@ export class StoreNewItemService {
       const created = await this.model.create(
         [
           {
-            itemNameId: this.oid(dto.itemNameId),
-            itemName: itemName.name,
-            itemNameCode: itemName.code,
+            // itemNameId: this.oid(dto.itemNameId),
+            itemName: categoryName.name.toUpperCase(),
+            // itemNameCode: itemName.code,
             itemCode: formatfalse,
 
             rackId: [],
@@ -329,7 +331,7 @@ export class StoreNewItemService {
         await this.occupyRackIfFree(
           dto.rackId,
           String(createdDoc._id),
-          String(createdDoc.itemName),
+          String(createdDoc.categoryLabel),
         );
       }
       // ✅ occupy rack (must remain consistent with item creation)
@@ -342,18 +344,18 @@ export class StoreNewItemService {
         itemId: String(createdDoc._id),
         categoryId: String(createdDoc.categoryId) ?? '',
         rackId: String(createdDoc.rackId) ?? '',
-        refNo: String(createdDoc.itemNameCode ?? ''),
+        refNo: String(createdDoc.itemName ?? ''),
         note: `Item created: ${String(createdDoc.itemName ?? '')} (${String(
-          createdDoc.itemNameCode ?? '',
+          createdDoc.categoryLabel ?? '',
         )})`,
       });
 
       const createdScrap = await this.model.create(
         [
           {
-            itemNameId: this.oid(dto.itemNameId),
-            itemName: itemName.name,
-            itemNameCode: itemName.code,
+            // itemNameId: this.oid(dto.itemNameId),
+            itemName: categoryName.name.toUpperCase(),
+            // itemNameCode: itemName.code,
             itemCode: formattrue,
             isScrap: true,
 
@@ -391,7 +393,7 @@ export class StoreNewItemService {
         await this.occupyRackIfFree(
           dto.scrapRackId,
           String(createdDocScrap._id),
-          String(createdDocScrap.itemName),
+          String(createdDocScrap.categoryLabel),
         );
       }
 
@@ -405,9 +407,9 @@ export class StoreNewItemService {
         itemId: String(createdDocScrap._id),
         categoryId: String(createdDocScrap.categoryId) ?? '',
         rackId: String(createdDocScrap.rackId) ?? '',
-        refNo: String(createdDocScrap.itemNameCode ?? ''),
-        note: `Item created: ${String(createdDocScrap.itemName ?? '')} (${String(
-          createdDocScrap.itemNameCode ?? '',
+        refNo: String(createdDocScrap.categoryLabel ?? ''),
+        note: `Item created: ${String(createdDocScrap.categoryLabel ?? '')} (${String(
+          createdDocScrap.categoryLabel ?? '',
         )})`,
       });
 
@@ -434,15 +436,15 @@ export class StoreNewItemService {
       // await session.withTransaction(async () => {
       const patch: any = {};
 
-      if (dto.itemNameId != null) {
-        const itemName = await this.itemNameModel
-          .findById(dto.itemNameId)
-          .lean();
-        if (!itemName) throw new BadRequestException('ItemName not found');
-        patch.itemNameId = this.oid(dto.itemNameId);
-        patch.itemName = itemName.name;
-        patch.itemNameCode = itemName.code;
-      }
+      // if (dto.itemNameId != null) {
+      //   const itemName = await this.itemNameModel
+      //     .findById(dto.itemNameId)
+      //     .lean();
+      //   if (!itemName) throw new BadRequestException('ItemName not found');
+      //   patch.itemNameId = this.oid(dto.itemNameId);
+      //   patch.itemName = itemName.name;
+      //   patch.itemNameCode = itemName.code;
+      // }
 
       if (dto.rackId != null) {
         var addrack: any = [];
@@ -475,7 +477,7 @@ export class StoreNewItemService {
         await this.occupyRackIfFree(
           dto.rackId,
           String(prev._id),
-          String(prev.itemName),
+          String(prev.categoryLabel),
         );
       }
 
@@ -749,8 +751,8 @@ export class StoreNewItemService {
       var rack = await this.rackModel.findById(rec.lines[0].rackId);
       receiveData.push({
         receivedBy: user?.name,
-        itemId: item?.itemName,
-        rackId: rack?.code,
+        itemId: item?.id,
+        rackId: rack?.id,
         qty: rec.lines[0].qty,
         remark: rec?.remark,
         createdAt: rec.createdAt,
@@ -868,7 +870,7 @@ export class StoreNewItemService {
       itemId: String(item._id),
       categoryId: item.categoryId ?? '',
       rackId: String(rack._id) ?? '',
-      refNo: String(item.itemNameCode ?? ''),
+      refNo: String(item.categoryLabel ?? ''),
       note: `Remove rack out: -${String(rack._id)} From Item ${String(item._id)}`,
     });
 
@@ -1024,7 +1026,7 @@ export class StoreNewItemService {
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
           rackId: item.rackId[0] ?? '',
-          refNo: String(item.itemNameCode ?? ''),
+          refNo: String(item.categoryLabel ?? ''),
           note: `Transfer out: -${qty} to rack ${toRackId}`,
         });
 
@@ -1224,7 +1226,7 @@ export class StoreNewItemService {
 
     if (rack.itemId && String(rack.itemId) === itemId) return true;
 
-    await this.occupyRackIfFree(rackId, itemId, String(item.itemName));
+    await this.occupyRackIfFree(rackId, itemId, String(item.categoryLabel));
 
     return true;
   }
@@ -1275,7 +1277,7 @@ export class StoreNewItemService {
 
     const racks = await this.rackModel
       .find({ _id: { $in: rackIds }, isActive: false })
-      .select({ name: 1, code: 1 })
+      .select({ code: 1 })
       .lean();
 
     const rackById = new Map<string, any>(
@@ -1288,7 +1290,7 @@ export class StoreNewItemService {
       return {
         itemId: String(it._id),
         rackId: rid,
-        rackName: r?.name ?? it.rackName ?? '',
+        // rackName: r?.name ?? it.rackName ?? '',
         rackCode: r?.code ?? '',
         available: Number(it.stockAvailableQuantity || 0),
         total: Number(it.totalStockQuantity || 0),
@@ -1339,13 +1341,12 @@ export class StoreNewItemService {
   }
 
   async scrapItem(dto: any) {
-    console.log(dto);
     const itemsCheck = await this.model.findById(dto.itemId).lean();
 
     // Step 1: Fetch items with isScrap flag true
     const items = await this.model
       .find({
-        itemNameId: itemsCheck!.itemNameId,
+        // itemNameId: itemsCheck!.itemNameId,
         categoryId: itemsCheck!.categoryId,
         isScrap: true,
       })
@@ -1360,6 +1361,31 @@ export class StoreNewItemService {
         roomId: dto.roomId, // Use roomId from dto
         itemId: { $in: itemIds },
         isActive: false, // Filter racks with item IDs from the fetched items
+      })
+      .lean();
+  }
+
+  async scrapByItemId(itemId: string) {
+    const itemsCheck = await this.model.findById(itemId).lean();
+
+    // Step 1: Fetch items with isScrap flag true
+    const items = await this.model
+      .find({
+        // itemNameId: itemsCheck!.itemNameId,
+        categoryId: itemsCheck!.categoryId,
+        isScrap: true,
+      })
+      .lean();
+
+    // Step 2: Get the array of item IDs
+    const itemIds = items.map((item) => item._id); // More efficient than using a loop
+
+    // Step 3: Find racks based on the item IDs and roomId
+    return await this.rackModel
+      .find({
+        itemId: { $in: itemIds },
+        isActive: false, // Filter racks with item IDs from the fetched items
+        isScrap: true,
       })
       .lean();
   }

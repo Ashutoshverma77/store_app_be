@@ -3,7 +3,7 @@ import mongoose, { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class StoreCategory extends Document {
-  @Prop({ required: true,  })
+  @Prop({ required: true })
   code: string; // CT-AA001
 
   @Prop({ required: true })
@@ -16,9 +16,14 @@ export class StoreCategory extends Document {
   @Prop({ default: '' })
   parentId: string;
 
+  @Prop({ default: false })
+  isMachine: boolean;
+
+  @Prop({ default: false })
+  isbag: boolean;
+
   @Prop({ default: '' })
   createdBy: string;
 }
 
 export const StoreCategorySchema = SchemaFactory.createForClass(StoreCategory);
-

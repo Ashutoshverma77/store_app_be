@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   Patch,
   Post,
@@ -105,5 +106,10 @@ export class StoreNewItemController {
     );
     // this.gateway.broadcastStoreItems().catch(() => {});
     return { success: true, imageUrl, entity };
+  }
+
+  @Get('by-item-scrap/:id')
+  getScrap(@Param('id') id: string) {
+    return this.s.scrapByItemId(id);
   }
 }

@@ -5,11 +5,11 @@ export type RoomDocument = Room & Document;
 
 @Schema({ timestamps: true })
 export class Room {
-  @Prop({ required: true, })
+  @Prop({ required: true })
   code: string; // auto generated e.g. RM0001
 
-  @Prop({ required: true,})
-  name: string;
+  @Prop({ default: false })
+  isOneRack: boolean;
 
   @Prop({ default: false })
   isScrap: boolean;

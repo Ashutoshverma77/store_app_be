@@ -86,12 +86,13 @@ export class RoomsService {
     const filter: any = {};
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        // { name: { $regex: search, $options: 'i' } },
         { code: { $regex: search, $options: 'i' } },
         { remark: { $regex: search, $options: 'i' } },
       ];
     }
     filter.isScrap = false;
+    filter.isOneRack = false;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)
@@ -114,12 +115,71 @@ export class RoomsService {
     const filter: any = {};
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        // { name: { $regex: search, $options: 'i' } },
         { code: { $regex: search, $options: 'i' } },
         { remark: { $regex: search, $options: 'i' } },
       ];
     }
     filter.isScrap = true;
+    filter.isOneRack = false;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllGoodMachineRoomPaged(q: PagedQuery) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const filter: any = {};
+    if (search) {
+      filter.$or = [
+        // { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+      ];
+    }
+    filter.isScrap = false;
+    filter.isOneRack = true;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllScrapMachineRoomPaged(q: PagedQuery) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const filter: any = {};
+    if (search) {
+      filter.$or = [
+        // { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+      ];
+    }
+    filter.isScrap = true;
+    filter.isOneRack = true;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)
@@ -139,16 +199,83 @@ export class RoomsService {
     return doc;
   }
 
-  async findAllRoomByScrap(isScrap: boolean) {
-    const doc = await this.model.find({ isScrap: true }).lean();
+  async findFiltter(filtter: any) {
+    const doc = await this.model.find(filtter).select('_id').lean();
     if (!doc) throw new NotFoundException('Room not found');
     return doc;
   }
 
-  async findAllRoomByGood(isScrap: boolean) {
-    const doc = await this.model.find({ isScrap: false }).lean();
+  async findAllRoomByScrap() {
+    const doc = await this.model
+      .find({ isScrap: true, isOneRack: false })
+      .lean();
     if (!doc) throw new NotFoundException('Room not found');
     return doc;
+  }
+
+  async findAllRoomByGood() {
+    const doc = await this.model
+      .find({ isScrap: false, isOneRack: false })
+      .lean();
+    if (!doc) throw new NotFoundException('Room not found');
+
+    return doc;
+  }
+
+  async findAllMachineRoomByScrap() {
+    const rooms = await this.model
+      .find({ isScrap: true, isOneRack: true })
+      .lean();
+
+    if (!rooms || rooms.length === 0) {
+      throw new NotFoundException('MachineRoom not found');
+    }
+
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const racks = await this.rackmodel
+      .find({
+        isOccupied: false,
+        isScrap: true,
+        roomId: { $in: allowedRoomIds },
+      })
+      .lean();
+
+    // Build a set of roomIds that actually appear in racks
+    const roomIdsWithRack = new Set(racks.map((rk) => String(rk.roomId)));
+
+    // Filter rooms to only those with racks
+    const result = rooms.filter((rm) => roomIdsWithRack.has(String(rm._id)));
+
+    return result;
+  }
+
+  async findAllMachineRoomByGood() {
+    const rooms = await this.model
+      .find({ isScrap: false, isOneRack: true })
+      .lean();
+
+    if (!rooms || rooms.length === 0) {
+      throw new NotFoundException('MachineRoom not found');
+    }
+
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const racks = await this.rackmodel
+      .find({
+        isOccupied: false,
+        isScrap: false,
+        roomId: { $in: allowedRoomIds },
+      })
+      .lean();
+
+    // Build a set of roomIds that actually appear in racks
+    const roomIdsWithRack = new Set(racks.map((rk) => String(rk.roomId)));
+
+    // Filter rooms to only those with racks
+    const result = rooms.filter((rm) => roomIdsWithRack.has(String(rm._id)));
+
+    return result;
   }
 
   async findAllRoom() {
@@ -170,15 +297,19 @@ export class RoomsService {
       // await session.withTransaction(async () => {
       // const { code } = await this.counterService.nextCode('room', 'RM');
 
-      var check = await this.model.find();
-      const format = this.counterService.format('RM', check.length + 1);
-      const name = dto.name?.trim() || format;
+      var check = await this.model.find({
+        isOneRack: dto.isOneRack,
+        isScrap: dto.isScrap,
+      });
+
+      const format = this.counterService.format('ROOM', check.length + 1);
+      // const name = dto.name?.trim() || format;
 
       created = await this.model.create(
         [
           {
             code: format,
-            name,
+            isOneRack: dto.isOneRack,
             isScrap: dto.isScrap,
             remark: dto.remark ?? '',
             createdBy: dto.createdBy ?? '',
@@ -196,7 +327,7 @@ export class RoomsService {
             type: 'CREATE',
             qty: 0,
             refNo: created?.code ?? '',
-            note: `Room created: ${created?.name ?? ''} (${created?.code ?? ''})`,
+            note: `Room created: ${created?.code ?? ''}`,
             itemId: null,
             categoryId: null,
             rackId: null,
@@ -221,14 +352,39 @@ export class RoomsService {
 
     // const session = await
     try {
-      const { name, remark, createdBy, rackmake, isScrap } = dto;
+      const { isOneRack, remark, createdBy, rackmake, isScrap } = dto;
       // const coderoom = await this.counterService.nextCode('room', 'RM');
-      var check = await this.model.find();
-      const format = this.counterService.format('RM', check.length + 1);
+      // var check = await this.model.find();
+
+      var check = await this.model.find({
+        isOneRack: dto.isOneRack,
+        isScrap: dto.isScrap,
+      });
+      var codeNo = check.length + 1;
+      var prifix = '';
+      if (isOneRack == false && isScrap == false) {
+        prifix = 'GI';
+      }
+
+      if (isOneRack == false && isScrap == true) {
+        prifix = 'SI';
+      }
+
+      if (isOneRack == true && isScrap == false) {
+        prifix = 'GM';
+      }
+
+      if (isOneRack == true && isScrap == true) {
+        prifix = 'SM';
+      }
+      const format = this.counterService.format(
+        `ROOM-${prifix}-`,
+        check.length + 1,
+      );
       // Step 1: Create the room
       const newRoom = await this.model.create({
         code: format,
-        name,
+        isOneRack,
         isScrap,
         remark: remark ?? '',
         createdBy: createdBy ?? '',
@@ -238,15 +394,18 @@ export class RoomsService {
       // const racks = [];
       for (let i = 0; i < rackmake; i++) {
         // const { code } = await this.counterService.nextCode('rack', 'RK');
-        const formet = this.counterService.format('RK', i + 1);
+        const formet = this.counterService.format(
+          `RK${codeNo}-${prifix}-`,
+          i + 1,
+        );
 
         var rack = await this.rackmodel.create({
           code: formet,
-          name,
+          // name,
           isScrap,
           remark: remark ?? '',
           roomId: newRoom._id,
-          roomName: newRoom?.name ?? '',
+          roomName: newRoom?.code ?? '',
           createdBy: createdBy ?? '',
         });
 
@@ -258,7 +417,7 @@ export class RoomsService {
             refNo: rack?.code ?? '',
             rackId: rack?._id ?? '',
             itemId: '',
-            note: `Rack created: ${rack?.name ?? ''} (${rack?.code ?? ''})`,
+            note: `Rack created: ${rack?.code ?? ''}`,
           },
         ]);
       }
@@ -276,7 +435,7 @@ export class RoomsService {
             type: 'CREATE',
             qty: 0,
             refNo: newRoom?.code ?? '',
-            note: `Room created: ${newRoom?.name ?? ''} (${newRoom?.code ?? ''})`,
+            note: `Room created: ${newRoom?.code ?? ''}`,
             itemId: '',
             categoryId: '',
             rackId: '',
@@ -307,7 +466,7 @@ export class RoomsService {
       updated = await this.model.findByIdAndUpdate(
         id,
         {
-          ...(dto.name != null ? { name: dto.name.trim() } : {}),
+          // ...(dto.name != null ? { name: dto.name.trim() } : {}),
           ...(dto.remark != null ? { remark: dto.remark } : {}),
         },
         { new: true },
@@ -322,7 +481,7 @@ export class RoomsService {
             type: 'EDIT',
             qty: 0,
             refNo: updated?.code ?? '',
-            note: `Room updated: ${updated?.name ?? ''} (${updated?.code ?? ''})`,
+            note: `Room updated: ${updated?.code ?? ''}`,
             itemId: null,
             categoryId: null,
             rackId: null,
@@ -361,7 +520,7 @@ export class RoomsService {
               type: 'CANCELLED',
               qty: 0,
               refNo: deleted?.code ?? '',
-              note: `Room deleted: ${deleted?.name ?? ''} (${deleted?.code ?? ''})`,
+              note: `Room deleted: ${deleted?.code ?? ''}`,
               itemId: null,
               categoryId: null,
               rackId: null,

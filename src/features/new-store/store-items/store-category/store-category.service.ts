@@ -83,8 +83,39 @@ export class StoreCategoryService {
   async create(dto: CreateCategoryDto) {
     const operatedBy = this.getOperatorId(dto);
     if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Category name is required');
+    }
 
-    // const { code } = await this.seq.nextCode('itemcategory', 'CT');
+    // 🔹 Normalize input name
+    const normalizedName = dto.name.replace(/\s+/g, '').toLowerCase();
+
+    // 🔹 Check if category already exists (case + space insensitive)
+    const exists = await this.model.findOne({
+      $expr: {
+        $eq: [
+          {
+            $toLower: {
+              $replaceAll: {
+                input: '$name',
+                find: ' ',
+                replacement: '',
+              },
+            },
+          },
+          normalizedName,
+        ],
+      },
+    });
+
+    if (exists) {
+      throw new BadRequestException(`Category "${dto.name}" already exists`);
+    }
+
+    var checkparent = await this.model.findById(dto.parentId);
+    if (!checkparent) throw new BadRequestException('parentId missing/invalid');
+
+    // const { code } = await this.seq.nextCode('itemcategory', 'CT'); cvbn
     var check = await this.model.find();
     const format = this.seq.format('CT', check.length + 1);
     // const session = await
@@ -95,11 +126,19 @@ export class StoreCategoryService {
       const created = await this.model.create(
         [
           {
-           code: format,
+            code: format,
             name: dto.name,
             remark: dto.remark ?? '',
             parentId: dto.parentId ? dto.parentId : '',
             createdBy: dto.createdBy ?? '',
+            isbag:
+              checkparent.parentId == '' && checkparent.isbag == true
+                ? true
+                : false,
+            isMachine:
+              checkparent.parentId == '' && checkparent.isMachine == true
+                ? true
+                : false,
           },
         ],
         // { session },

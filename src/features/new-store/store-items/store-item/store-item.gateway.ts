@@ -179,4 +179,16 @@ export class StoreNewItemGateway {
 
     client.emit('store:findAllReceivePaged', data);
   }
+
+  @SubscribeMessage('store:findRackByItemIdData')
+  async findRackByItemId(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: any,
+  ) {
+    const itemId = String(body?.itemId || '').trim();
+
+    const item = await this.s.scrapByItemId(itemId); // returns item or null
+    // console.log(item);
+    client.emit('store:findRackByItemIdData', item); // map or null
+  }
 }

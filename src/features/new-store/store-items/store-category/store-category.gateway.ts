@@ -51,16 +51,33 @@ export class StoreCategoryGateway {
     client.emit('store:parentcategory', data);
   }
 
-  @SubscribeMessage('store:categoryByIdperent')
-  async findchild(
+  @SubscribeMessage('store:levelOnecategoryByIdperent')
+  async findchildlevelOne(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { id: string },
   ) {
-    console.log(body);
     const data = await this.s.findchild(body?.id);
 
-    console.log(data);
+    client.emit('store:levelOnecategoryByIdperent', data);
+  }
 
-    client.emit('store:categoryByIdperent', data);
+  @SubscribeMessage('store:levelTwocategoryByIdperent')
+  async findchildlevelTwo(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { id: string },
+  ) {
+    const data = await this.s.findchild(body?.id);
+
+    client.emit('store:levelTwocategoryByIdperent', data);
+  }
+
+  @SubscribeMessage('store:levelThreecategoryByIdperent')
+  async findchildlevelThree(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { id: string },
+  ) {
+    const data = await this.s.findchild(body?.id);
+
+    client.emit('store:levelThreecategoryByIdperent', data);
   }
 }

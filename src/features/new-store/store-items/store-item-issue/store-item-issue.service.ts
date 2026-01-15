@@ -226,8 +226,8 @@ export class IssueService {
     const item = await this.itemModel.findById(this.oid(selectedItemId)).lean();
     if (!item) throw new BadRequestException('Item not found');
 
-    const itemNameOid = this.asOid((item as any).itemNameId);
-    if (!itemNameOid) throw new BadRequestException('Item has no itemNameId');
+    // const itemNameOid = this.asOid((item as any).itemNameId);
+    // if (!itemNameOid) throw new BadRequestException('Item has no itemNameId');
 
     const parentCategoryOid = this.asOid((item as any).categoryId);
     const parentCategoryId = parentCategoryOid ? String(parentCategoryOid) : '';
@@ -249,7 +249,7 @@ export class IssueService {
 
     const items = await this.itemModel
       .find({
-        itemNameId: itemNameOid,
+        // itemNameId: itemNameOid,
         ...(bucketOids.length ? { categoryId: { $in: bucketOids } } : {}),
       })
       .select({
@@ -325,7 +325,7 @@ export class IssueService {
 
     return {
       selectedItemId: String((item as any)._id),
-      itemNameId: String(itemNameOid),
+      // itemNameId: String(itemNameOid),
       itemName: (item as any).itemName ?? '',
       itemNameCode: (item as any).itemNameCode ?? '',
       unit: (item as any).unit ?? '',
@@ -1383,7 +1383,7 @@ export class IssueService {
 
     const candidates = await this.itemModel
       .find({
-        itemNameId: (repItem as any).itemNameId,
+        // itemNameId: (repItem as any).itemNameId,
         categoryId: this.oid(bucketCategoryId),
         stockAvailableQuantity: { $gt: 0 },
       })

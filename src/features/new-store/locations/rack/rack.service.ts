@@ -113,7 +113,7 @@ export class RacksService {
       rowsQtyData.push({
         _id: data._id,
         code: data.code,
-        name: data.name,
+        // name: data.name,
         remark: data.remark,
         roomId: data.roomId,
         itemId: data.itemId,
@@ -138,20 +138,29 @@ export class RacksService {
     const skip = (page - 1) * limit;
 
     const search = (q.search || '').trim();
-    const filter: any = {};
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: false,
+      isScrap: false,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: false,
+      roomId: { $in: allowedRoomIds },
+    };
 
     if (q.roomId) filter.roomId = q.roomId;
 
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        // { name: { $regex: search, $options: 'i' } },
         { code: { $regex: search, $options: 'i' } },
         { remark: { $regex: search, $options: 'i' } },
         { roomName: { $regex: search, $options: 'i' } },
       ];
     }
 
-    filter.isScrap = false;
+    // filter.isScrap = false;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)
@@ -171,20 +180,114 @@ export class RacksService {
     const skip = (page - 1) * limit;
 
     const search = (q.search || '').trim();
-    const filter: any = {};
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: false,
+      isScrap: true,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: true,
+      roomId: { $in: allowedRoomIds },
+    };
 
     if (q.roomId) filter.roomId = q.roomId;
 
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        // { name: { $regex: search, $options: 'i' } },
         { code: { $regex: search, $options: 'i' } },
         { remark: { $regex: search, $options: 'i' } },
         { roomName: { $regex: search, $options: 'i' } },
       ];
     }
 
-    filter.isScrap = true;
+    // filter.isScrap = true;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllGoodMachineRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: true,
+      isScrap: false,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: false,
+      roomId: { $in: allowedRoomIds },
+    };
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        // { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // filter.isScrap = true;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllScrapMachineRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: true,
+      isScrap: true,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: true,
+      roomId: { $in: allowedRoomIds },
+    };
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        // { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // filter.isScrap = true;
     const [rows, total] = await Promise.all([
       this.model
         .find(filter)
@@ -211,7 +314,7 @@ export class RacksService {
     const search = (q.search || '').trim();
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        // { name: { $regex: search, $options: 'i' } },
         { code: { $regex: search, $options: 'i' } },
       ];
     }
@@ -257,11 +360,9 @@ export class RacksService {
   }
 
   async findRackByItem(itemId: string) {
-    console.log(itemId);
     const doc = await this.model
       .find({ itemId: itemId, isActive: false })
       .lean();
-    console.log(doc);
     if (!doc) throw new NotFoundException('Rack not found');
     return doc;
   }
@@ -312,7 +413,7 @@ export class RacksService {
     const rackWithStocks = racks.map((rack) => ({
       _id: rack._id,
       code: rack.code,
-      name: rack.name,
+      // name: rack.name,
       remark: rack.remark,
       roomId: rack.roomId,
       itemId: rack.itemId,
@@ -353,7 +454,7 @@ export class RacksService {
     const rackWithStocks = {
       _id: links._id,
       code: links.code,
-      name: links.name,
+      // name: links.name,
       remark: links.remark,
       roomId: links.roomId,
       itemId: links.itemId,
@@ -384,16 +485,16 @@ export class RacksService {
 
       const formet = this.counterService.format('RK', rack.length + 1);
       // const { code } = await this.counterService.nextCode('rack', 'RK');
-      const name = dto.name?.trim() || formet;
+      // const name = dto.name?.trim() || formet;
 
       created = await this.model.create([
         {
           code: formet,
-          name,
+          // name,
           isScrap: room.isScrap,
           remark: dto.remark ?? '',
           roomId: dto.roomId,
-          roomName: room?.name ?? '',
+          roomName: room?.code ?? '',
           createdBy: dto.createdBy ?? '',
         },
       ]);
@@ -408,7 +509,7 @@ export class RacksService {
           refNo: created?.code ?? '',
           rackId: created?._id ?? null,
           itemId: '',
-          note: `Rack created: ${created?.name ?? ''} (${created?.code ?? ''})`,
+          note: `Rack created: ${created?.code ?? ''}`,
         },
       ]);
 
@@ -428,13 +529,13 @@ export class RacksService {
 
       // await session.withTransaction(async () => {
       const patch: any = {};
-      if (dto.name != null) patch.name = dto.name.trim();
+      // if (dto.name != null) patch.name = dto.name.trim();
       if (dto.remark != null) patch.remark = dto.remark;
 
       if (dto.roomId != null) {
         const room = await this.rooms.findOne(dto.roomId);
         patch.roomId = dto.roomId;
-        patch.roomName = room?.name ?? '';
+        patch.roomName = room?.code ?? '';
         patch.isScrap = room?.isScrap ?? false;
       }
 
@@ -455,7 +556,7 @@ export class RacksService {
             itemId: updated.itemId
               ? new Types.ObjectId(String(updated.itemId))
               : null,
-            note: `Rack updated: ${updated.name ?? ''} (${updated.code ?? ''})`,
+            note: `Rack updated: ${updated.code ?? ''}`,
           },
         ],
         // { session },
@@ -494,7 +595,7 @@ export class RacksService {
               itemId: deleted.itemId
                 ? new Types.ObjectId(String(deleted.itemId))
                 : null,
-              note: `Rack deleted: ${deleted.name ?? ''} (${deleted.code ?? ''})`,
+              note: `Rack deleted: ${deleted.code ?? ''}`,
             },
           ],
           // { session },

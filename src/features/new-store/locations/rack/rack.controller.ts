@@ -41,7 +41,12 @@ export class RacksController {
   }
 
   @Get('by-item/:id')
-  get(@Param('id') id: string) {
+  getByItem(@Param('id') id: string) {
     return this.service.findRackByItem(id);
+  }
+
+  @Get('by-room/:id')
+  getByRoom(@Param('id') id: string) {
+    return this.service.findRackByRoom(id);
   }
 }

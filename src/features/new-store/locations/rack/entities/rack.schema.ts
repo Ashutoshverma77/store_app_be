@@ -8,8 +8,8 @@ export class Rack {
   @Prop({ required: true })
   code: string; // auto generated e.g. RK0001
 
-  @Prop({ required: true })
-  name: string;
+  // @Prop({ required: true })
+  // name: string;
 
   @Prop({ default: '' })
   remark: string;

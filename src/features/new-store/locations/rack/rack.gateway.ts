@@ -73,6 +73,36 @@ export class RackGateway {
     client.emit('store:findAllScrapRackPaged', res);
   }
 
+  @SubscribeMessage('store:findAllGoodMachineRackPaged')
+  async findAllGoodMachineRackPaged(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.racks.findAllGoodMachineRackPaged({
+      page: Number(body?.page ?? 1),
+      limit: Number(body?.limit ?? 12),
+      search: String(body?.search ?? ''),
+      sort: String(body?.sort ?? 'createdAt'),
+      roomId: body?.roomId ? String(body.roomId) : undefined,
+    });
+    client.emit('store:findAllGoodMachineRackPaged', res);
+  }
+
+  @SubscribeMessage('store:findAllScrapMachineRackPaged')
+  async findAllScrapMachineRackPaged(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.racks.findAllScrapMachineRackPaged({
+      page: Number(body?.page ?? 1),
+      limit: Number(body?.limit ?? 12),
+      search: String(body?.search ?? ''),
+      sort: String(body?.sort ?? 'createdAt'),
+      roomId: body?.roomId ? String(body.roomId) : undefined,
+    });
+    client.emit('store:findAllScrapMachineRackPaged', res);
+  }
+
   @SubscribeMessage('store:findOneRack')
   async findOneRack(
     @MessageBody() body: any,

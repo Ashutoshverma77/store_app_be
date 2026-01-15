@@ -60,6 +60,34 @@ export class RoomGateway {
     client.emit('store:findAllScrapRoomPaged', res);
   }
 
+  @SubscribeMessage('store:findAllGoodMachineRoomPaged')
+  async findAllGoodMachineRoomPaged(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.rooms.findAllGoodMachineRoomPaged({
+      page: Number(body?.page ?? 1),
+      limit: Number(body?.limit ?? 12),
+      search: String(body?.search ?? ''),
+      sort: String(body?.sort ?? 'createdAt'),
+    });
+    client.emit('store:findAllGoodMachineRoomPaged', res);
+  }
+
+  @SubscribeMessage('store:findAllScrapMachineRoomPaged')
+  async findAllScrapMachineRoomPaged(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.rooms.findAllScrapMachineRoomPaged({
+      page: Number(body?.page ?? 1),
+      limit: Number(body?.limit ?? 12),
+      search: String(body?.search ?? ''),
+      sort: String(body?.sort ?? 'createdAt'),
+    });
+    client.emit('store:findAllScrapMachineRoomPaged', res);
+  }
+
   @SubscribeMessage('store:findOneRoom')
   async findOneRoom(
     @MessageBody() body: any,
@@ -84,7 +112,7 @@ export class RoomGateway {
     @MessageBody() body: any,
     @ConnectedSocket() client: Socket,
   ) {
-    const res = await this.rooms.findAllRoomByScrap(body.dto);
+    const res = await this.rooms.findAllRoomByScrap();
     client.emit('store:findAllRoomDataByScrap', res);
   }
 
@@ -93,7 +121,25 @@ export class RoomGateway {
     @MessageBody() body: any,
     @ConnectedSocket() client: Socket,
   ) {
-    const res = await this.rooms.findAllRoomByGood(body.dto);
+    const res = await this.rooms.findAllRoomByGood();
     client.emit('store:findAllRoomDataByGood', res);
+  }
+
+  @SubscribeMessage('store:findAllMachineRoomDataByScrap')
+  async findAllMachineRoomByScrap(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.rooms.findAllMachineRoomByScrap();
+    client.emit('store:findAllMachineRoomDataByScrap', res);
+  }
+
+  @SubscribeMessage('store:findAllMachineRoomDataByGood')
+  async findAllMachineRoomByGood(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const res = await this.rooms.findAllMachineRoomByGood();
+    client.emit('store:findAllMachineRoomDataByGood', res);
   }
 }
