@@ -463,7 +463,7 @@ export class StoreNewItemService {
 
       if (dto.unit != null) patch.unit = dto.unit;
       if (dto.description != null) patch.description = dto.description;
-      if (dto.imageUrl != null) patch.imageUrl = dto.imageUrl;
+      // if (dto.imageUrl != null) patch.imageUrl = dto.imageUrl;
 
       const prev = await this.model.findById(this.oid(dto.id));
       // .session(session);
@@ -752,7 +752,10 @@ export class StoreNewItemService {
       receiveData.push({
         receivedBy: user?.name,
         itemId: item?.id,
+        itemCode: item?.itemCode,
+        itemName: item?.itemName,
         rackId: rack?.id,
+        rackCode: rack?.code,
         qty: rec.lines[0].qty,
         remark: rec?.remark,
         createdAt: rec.createdAt,
