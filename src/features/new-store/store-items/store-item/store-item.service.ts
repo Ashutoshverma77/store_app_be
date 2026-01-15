@@ -331,7 +331,7 @@ export class StoreNewItemService {
         await this.occupyRackIfFree(
           dto.rackId,
           String(createdDoc._id),
-          String(createdDoc.categoryLabel),
+          String(createdDoc.itemName),
         );
       }
       // ✅ occupy rack (must remain consistent with item creation)
@@ -393,7 +393,7 @@ export class StoreNewItemService {
         await this.occupyRackIfFree(
           dto.scrapRackId,
           String(createdDocScrap._id),
-          String(createdDocScrap.categoryLabel),
+          String(createdDocScrap.itemName),
         );
       }
 
@@ -407,8 +407,8 @@ export class StoreNewItemService {
         itemId: String(createdDocScrap._id),
         categoryId: String(createdDocScrap.categoryId) ?? '',
         rackId: String(createdDocScrap.rackId) ?? '',
-        refNo: String(createdDocScrap.categoryLabel ?? ''),
-        note: `Item created: ${String(createdDocScrap.categoryLabel ?? '')} (${String(
+        refNo: String(createdDocScrap.itemName ?? ''),
+        note: `Item created: ${String(createdDocScrap.itemName ?? '')} (${String(
           createdDocScrap.categoryLabel ?? '',
         )})`,
       });
@@ -477,7 +477,7 @@ export class StoreNewItemService {
         await this.occupyRackIfFree(
           dto.rackId,
           String(prev._id),
-          String(prev.categoryLabel),
+          String(prev.itemName),
         );
       }
 
@@ -877,7 +877,7 @@ export class StoreNewItemService {
       itemId: String(item._id),
       categoryId: item.categoryId ?? '',
       rackId: String(rack._id) ?? '',
-      refNo: String(item.categoryLabel ?? ''),
+      refNo: String(item.itemName ?? ''),
       note: `Remove rack out: -${String(rack._id)} From Item ${String(item._id)}`,
     });
 
@@ -1033,7 +1033,7 @@ export class StoreNewItemService {
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
           rackId: item.rackId[0] ?? '',
-          refNo: String(item.categoryLabel ?? ''),
+          refNo: String(item.itemName ?? ''),
           note: `Transfer out: -${qty} to rack ${toRackId}`,
         });
 
@@ -1238,7 +1238,7 @@ export class StoreNewItemService {
 
     if (rack.itemId && String(rack.itemId) === itemId) return true;
 
-    await this.occupyRackIfFree(rackId, itemId, String(item.categoryLabel));
+    await this.occupyRackIfFree(rackId, itemId, String(item.itemName));
 
     return true;
   }
