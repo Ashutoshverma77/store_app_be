@@ -27,6 +27,10 @@ export class StoreNewItemController {
 
   @Post()
   async create(@Body() dto: CreateItemDto) {
+
+    console.log(dto);
+
+    // return;
     const data = await this.s.create(dto);
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});

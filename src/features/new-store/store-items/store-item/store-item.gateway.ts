@@ -78,8 +78,6 @@ export class StoreNewItemGateway {
   ) {
     const data = await this.s.findOne(body?.id);
 
-    console.log(data);
-
     client.emit('store:findOneItem', { id: body.id, data });
   }
 
@@ -92,6 +90,16 @@ export class StoreNewItemGateway {
     const rows = await this.s.getSameItemRacks(itemId);
 
     client.emit('store:sameItemRacks:res', rows);
+  }
+
+  @SubscribeMessage('store:itemMachineCategoryGet:req')
+  async itemMachineCategoryGet(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: any,
+  ) {
+    const id = String(body?.id || '').trim();
+    const rows = await this.s.itemMachineCategoryGet(id);
+    client.emit('store:itemMachineCategoryGet:res', rows);
   }
 
   @SubscribeMessage('store:sameItemRacksWithItemAndRack')
@@ -162,7 +170,7 @@ export class StoreNewItemGateway {
     const itemId = String(body?.itemId || '').trim();
 
     const item = await this.s.scrapItem(body); // returns item or null
-    console.log(item);
+
     client.emit('store:scrapItemAllData', item); // map or null
   }
 
@@ -171,11 +179,7 @@ export class StoreNewItemGateway {
     @ConnectedSocket() client: Socket,
     @MessageBody() q: ReceivePagedQueryDto,
   ) {
-    // console.log(q);
-
     const data = await this.s.findAllReceivePaged(q || {});
-
-    console.log(data);
 
     client.emit('store:findAllReceivePaged', data);
   }
@@ -188,7 +192,7 @@ export class StoreNewItemGateway {
     const itemId = String(body?.itemId || '').trim();
 
     const item = await this.s.scrapByItemId(itemId); // returns item or null
-    // console.log(item);
+
     client.emit('store:findRackByItemIdData', item); // map or null
   }
 }

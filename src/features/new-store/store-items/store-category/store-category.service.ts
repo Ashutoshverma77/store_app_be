@@ -132,11 +132,11 @@ export class StoreCategoryService {
             parentId: dto.parentId ? dto.parentId : '',
             createdBy: dto.createdBy ?? '',
             isbag:
-              checkparent.parentId == '' && checkparent.isbag == true
+              checkparent.parentId.length < 1 && checkparent.isbag == true
                 ? true
                 : false,
             isMachine:
-              checkparent.parentId == '' && checkparent.isMachine == true
+              checkparent.parentId.length < 1 && checkparent.isMachine == true
                 ? true
                 : false,
           },
@@ -166,12 +166,12 @@ export class StoreCategoryService {
     const operatedBy = this.getOperatorId(dto);
     if (!operatedBy)
       throw new BadRequestException('updatedBy/createdBy missing/invalid');
-
+    var parent: any = [];
     const patch: any = {};
     if (dto.name != null) patch.name = dto.name;
     if (dto.remark != null) patch.remark = dto.remark;
-    if (dto.parentId !== undefined)
-      patch.parentId = dto.parentId ? new Types.ObjectId(dto.parentId) : null;
+    if (dto.parentId !== undefined) parent.push(dto.parentId);
+    patch.parentId = parent;
 
     // const session = await
     try {
@@ -262,11 +262,10 @@ export class StoreCategoryService {
   }
 
   async findperent() {
-    return await this.model.find({ parentId: '' }).lean();
+    return await this.model.find({ parentId: [] }).lean();
   }
 
   async findchild(id: string) {
-    console.log(id);
-    return await this.model.find({ parentId: id }).lean();
+    return await this.model.find({ parentId: { $in: [id] } }).lean();
   }
 }

@@ -1,12 +1,19 @@
-import { IsInt, IsMongoId, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class CreateItemDto {
-  // @IsString() itemNameId: string;
+  @IsString() itemName: string;
   @IsString() rackId: string;
   @IsString() scrapRackId: string;
 
   @IsOptional() @IsString() categoryId?: string;
-  @IsOptional() @IsString() subCategoryId?: string;
+  @IsOptional() @IsArray() subCategoryIds?: [string];
 
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsString() description?: string;
@@ -45,7 +52,6 @@ export class ReceivePagedQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsString() sort?: string;
 }
-
 
 export class TransferRackDto {
   @IsMongoId()

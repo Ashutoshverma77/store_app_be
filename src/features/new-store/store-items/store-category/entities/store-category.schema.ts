@@ -13,14 +13,17 @@ export class StoreCategory extends Document {
   remark: string;
 
   // if parentId exists => subcategory
-  @Prop({ default: '' })
-  parentId: string;
+  @Prop({ default: [] })
+  parentId: [string];
 
   @Prop({ default: false })
   isMachine: boolean;
 
   @Prop({ default: false })
   isbag: boolean;
+
+  @Prop({ default: false })
+  isNormalItem: boolean;
 
   @Prop({ default: '' })
   createdBy: string;
