@@ -76,7 +76,7 @@ export class StoreNewItemService {
     private readonly userService: UserService,
 
     private readonly seq: CounterService,
-  ) {}
+  ) { }
 
   /* -------------------- helpers -------------------- */
 
@@ -244,6 +244,28 @@ export class StoreNewItemService {
 
   /* -------------------- CRUD -------------------- */
 
+  private normalizeName(v: string): string {
+    return (v ?? "").toLowerCase().replace(/\s+/g, "");
+  }
+
+  async findExactItemName(itemName?: string): Promise<string | null> {
+    const inputNorm = this.normalizeName(itemName ?? "");
+    if (!inputNorm) return null;
+
+    const items = await this.model.find({}, { name: 1 }).lean();
+
+    const found: any = items.find((x: any) => this.normalizeName(x.name) === inputNorm);
+
+    // condition + return
+    if (found) {
+      return found.name; // exact stored name
+    }
+
+    return null;
+  }
+
+
+
   async create(dto: CreateItemDto) {
     const itemName = (dto.itemName ?? '').trim();
     const subCategoryIds = Array.isArray(dto.subCategoryIds)
@@ -288,6 +310,15 @@ export class StoreNewItemService {
       return { status: true, msg: 'Category Added' };
     }
 
+    const exactName = await this.findExactItemName(dto.itemName);
+
+    if (exactName) {
+      return { status: false, msg: "Item already exists", exactName };
+    }
+
+    // else continue creating item
+
+
     // 2) Now do the item creation path
     const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
 
@@ -312,8 +343,14 @@ export class StoreNewItemService {
     // - Else parentId = [categoryId]
     const parentIdsForNewCategory = [dto.categoryId];
 
+    const code = categoryParent.code;
+    const idx = code.indexOf("-");
+    const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
+
     const catCount = await this.catModel.countDocuments();
-    const categoryCode = this.seq.format('CT', catCount + 1);
+    const categoryCode = this.seq.format(prefix, catCount + 1);
+
+
 
     const createdCategoryArr = await this.catModel.create([
       {
@@ -344,8 +381,8 @@ export class StoreNewItemService {
     const normalCount = await this.model.countDocuments({ isScrap: false });
     const scrapCount = await this.model.countDocuments({ isScrap: true });
 
-    const normalItemCode = this.seq.format('IT', normalCount + 1);
-    const scrapItemCode = this.seq.format('ITS', scrapCount + 1);
+    const normalItemCode = this.seq.format(prefix, normalCount + 1);
+    const scrapItemCode = this.seq.format(`${prefix}S`, scrapCount + 1);
 
     // -------------------- NORMAL ITEM --------------------
     const createdItemArr = await this.model.create([
@@ -624,7 +661,6 @@ export class StoreNewItemService {
     receivedBy: string;
     remark?: string;
   }) {
-    console.log(dto);
     const itemId = String(dto.itemId || '').trim();
     const qty = Number(dto.qty || 0);
     const receivedBy = String(dto.receivedBy || '').trim();

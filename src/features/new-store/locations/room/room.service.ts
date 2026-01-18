@@ -38,7 +38,7 @@ export class RoomsService {
     private readonly trackModel: Model<StockTrackDocument>,
 
     private readonly counterService: CounterService,
-  ) {}
+  ) { }
 
   private sortObj(sort?: string): Record<string, SortOrder> {
     const s = (sort ?? '-createdAt').trim();
@@ -363,27 +363,28 @@ export class RoomsService {
       var codeNo = check.length + 1;
       var prifix = '';
       if (isOneRack == false && isScrap == false) {
-        prifix = 'GI';
+        prifix = 'RGI';
       }
 
       if (isOneRack == false && isScrap == true) {
-        prifix = 'SI';
+        prifix = 'RSI';
       }
 
       if (isOneRack == true && isScrap == false) {
-        prifix = 'GM';
+        prifix = 'RM';
       }
 
       if (isOneRack == true && isScrap == true) {
-        prifix = 'SM';
+        prifix = 'RMS';
       }
       const format = this.counterService.format(
         `ROOM-${prifix}`,
         check.length + 1,
       );
+      var count = check.length + 1;
       // Step 1: Create the room
       const newRoom = await this.model.create({
-        code: format,
+        code: `${prifix}-${count}`,
         isOneRack,
         isScrap,
         remark: remark ?? '',
@@ -395,7 +396,7 @@ export class RoomsService {
       for (let i = 0; i < rackmake; i++) {
         // const { code } = await this.counterService.nextCode('rack', 'RK');
         const formet = this.counterService.format(
-          `RK${codeNo}-${prifix}`,
+          `${prifix}${count}`,
           i + 1,
         );
 

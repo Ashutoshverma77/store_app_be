@@ -51,7 +51,7 @@ export class RacksService {
 
     private readonly counterService: CounterService,
     private readonly rooms: RoomsService,
-  ) {}
+  ) { }
 
   private oid(id: string) {
     return new Types.ObjectId(id);
@@ -572,8 +572,10 @@ export class RacksService {
 
       const room = await this.rooms.findOne(dto.roomId);
       const rack = await this.model.find({ roomId: room._id, isActive: false });
-
-      const formet = this.counterService.format('RK', rack.length + 1);
+      const code = rack[0].code;
+      const idx = code.indexOf("-");
+      const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
+      const formet = this.counterService.format(prefix, rack.length + 1);
       // const { code } = await this.counterService.nextCode('rack', 'RK');
       // const name = dto.name?.trim() || formet;
 
