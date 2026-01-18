@@ -235,7 +235,7 @@ export class RoomsService {
 
     const racks = await this.rackmodel
       .find({
-        isOccupied: false,
+        // isOccupied: false,
         isScrap: true,
         roomId: { $in: allowedRoomIds },
       })
@@ -263,7 +263,7 @@ export class RoomsService {
 
     const racks = await this.rackmodel
       .find({
-        isOccupied: false,
+        // isOccupied: false,
         isScrap: false,
         roomId: { $in: allowedRoomIds },
       })

@@ -379,7 +379,7 @@ export class StoreNewItemService {
     if (dto.rackId && dto.rackId !== '') {
       await this.model.updateOne(
         { _id: createdItemDoc._id },
-        { $addToSet: { rackId: new Types.ObjectId(dto.rackId) } },
+        { $addToSet: { rackId: dto.rackId.toString() } },
       );
 
       await this.occupyRackIfFree(
@@ -434,7 +434,7 @@ export class StoreNewItemService {
     if (dto.scrapRackId && dto.scrapRackId !== '') {
       await this.model.updateOne(
         { _id: createdScrapDoc._id },
-        { $addToSet: { rackId: new Types.ObjectId(dto.scrapRackId) } },
+        { $addToSet: { rackId: dto.scrapRackId.toString() } },
       );
 
       await this.occupyRackIfFree(
@@ -462,7 +462,8 @@ export class StoreNewItemService {
 
   async update(dto: UpdateItemDto) {
     console.log(dto);
-
+    var item = await this.model.findById(dto.id);
+    if (!item) throw new BadRequestException('Item not found');
     const operatedBy = this.mustOperatorId(dto.createdBy, 'updatedBy');
 
     // const session = await
@@ -481,9 +482,9 @@ export class StoreNewItemService {
       //   patch.itemName = itemName.name;
       //   patch.itemNameCode = itemName.code;
       // }
-
+      var addrack: any = [];
+      addrack = item.rackId;
       if (dto.rackId != null) {
-        var addrack: any = [];
         const rack = await this.rackModel.findById(dto.rackId).lean();
         if (!rack) throw new BadRequestException('Rack not found');
         addrack.push(dto.rackId);
@@ -870,8 +871,8 @@ export class StoreNewItemService {
     const fromRack = await this.rackModel
       .findOne({
         _id: this.oid(fromRackId),
-        isOccupied: true,
-        itemId: this.oid(itemId),
+        // isOccupied: true,
+        itemId: { $in: [itemId] },
         isActive: false,
       })
       .lean();
@@ -884,37 +885,55 @@ export class StoreNewItemService {
     return this.changeItemRack(itemId, toRackId, operatedBy);
   }
 
-  async transferRack(itemId: string, toRackId: string, operatedBy?: string) {
-    const item = await this.model.findById(this.oid(itemId)).lean();
+  async removeRackFromItem(
+    itemId: string,
+    rackId: string,
+    operatedBy?: string,
+  ) {
+    const itemOid = this.oid(itemId);
+    const rackOid = this.oid(rackId);
+
+    const item = await this.model.findById(itemOid).lean();
     if (!item) throw new BadRequestException('Item not found');
 
-    const rack = await this.rackModel.findById(this.oid(toRackId)).lean();
-    if (!rack) throw new BadRequestException('toRackId not found');
-
-    await this.rackModel.updateOne(
-      { _id: this.oid(toRackId), itemId: this.oid(itemId), isActive: false },
-      { $set: { isOccupied: false, itemId: '', itemName: '' } },
-      // { session },
-    );
-
-    var data = await this.itemRackQtyModel.find({
-      rackId: toRackId,
+    const rack = await this.rackModel.findById(rackOid).lean();
+    if (!rack) throw new BadRequestException('rackId not found');
+    const stock = await this.itemRackQtyModel.findOne({
+      rackId: rackId, // ensure your schema types match (ObjectId vs string)
       itemId: itemId,
     });
+    if (!stock) throw new BadRequestException('stock not found');
 
-    for (var qty of data) {
-      await this.itemRackQtyModel.findByIdAndDelete(qty._id);
-    }
+    if (stock.stockAvailableQuantity > 0)
+      throw new BadRequestException('stock not found');
+
+    // If you want to block inactive racks, enforce it explicitly:
+    // if (rack.isActive === false) throw new BadRequestException("Rack is inactive");
+
+    await this.rackModel.updateOne(
+      { _id: rackOid }, // (optionally add isActive: true)
+      { $pull: { itemId: itemId } }, // adjust field name
+    );
+
+    await this.model.updateOne(
+      { _id: itemOid },
+      { $pull: { rackId: rackId } }, // adjust field name
+    );
+
+    await this.itemRackQtyModel.deleteMany({
+      rackId: rackId, // ensure your schema types match (ObjectId vs string)
+      itemId: itemId,
+    });
 
     await this.track({
       type: 'ADJUST',
       qty: 0,
-      operatedBy: String(operatedBy),
+      operatedBy: operatedBy ? String(operatedBy) : '',
       itemId: String(item._id),
       categoryId: item.categoryId ?? '',
-      rackId: String(rack._id) ?? '',
+      rackId: String(rack._id),
       refNo: String(item.itemName ?? ''),
-      note: `Remove rack out: -${String(rack._id)} From Item ${String(item._id)}`,
+      note: `Removed item ${String(item._id)} from rack ${String(rack._id)}`,
     });
 
     return true;
@@ -1205,7 +1224,12 @@ export class StoreNewItemService {
               itemId: this.oid(itemId),
               isActive: false,
             },
-            { $set: { isOccupied: false, itemId: '' } },
+            {
+              $set: {
+                //  isOccupied: false,
+                itemId: [],
+              },
+            },
             // { session },
           );
           var data = await this.itemRackQtyModel.find({
@@ -1253,18 +1277,21 @@ export class StoreNewItemService {
       {
         _id: this.oid(rackId),
         $or: [
-          { isOccupied: false, isActive: false },
+          {
+            // isOccupied: false,
+            isActive: false,
+          },
           { itemId: null },
           { itemId: { $exists: false } },
           { itemId: { $type: 'string' } }, // matches old "" safely
         ],
       },
       {
-        $set: {
-          isOccupied: true,
-          itemId: this.oid(itemId),
-          itemName: itemName,
-        },
+        // $set: {
+        // isOccupied: true,
+        $push: { itemId: itemId },
+        // itemName: itemName,
+        // },
       },
       { new: true },
     );
@@ -1303,7 +1330,12 @@ export class StoreNewItemService {
   private async releaseRackForItem(rackId: string, itemId: string) {
     const res = await this.rackModel.updateOne(
       { _id: this.oid(rackId), itemId: this.oid(itemId), isActive: false },
-      { $set: { isOccupied: false, itemId: '' } },
+      {
+        $set: {
+          //  isOccupied: false,
+          itemId: [],
+        },
+      },
     );
 
     var data = await this.itemRackQtyModel.find({
@@ -1441,6 +1473,7 @@ export class StoreNewItemService {
 
   async scrapByItemId(itemId: string) {
     const itemsCheck = await this.model.findById(itemId).lean();
+    console.log(itemsCheck);
 
     // Step 1: Fetch items with isScrap flag true
     const items = await this.model
@@ -1450,16 +1483,60 @@ export class StoreNewItemService {
         isScrap: true,
       })
       .lean();
+    console.log(items);
 
     // Step 2: Get the array of item IDs
-    const itemIds = items.map((item) => item._id); // More efficient than using a loop
+    const itemIds = items.map((item) => item._id.toString()); // More efficient than using a loop
 
-    // Step 3: Find racks based on the item IDs and roomId
-    return await this.rackModel
+    console.log(itemIds);
+
+    var rack = await this.rackModel
       .find({
         itemId: { $in: itemIds },
         isActive: false, // Filter racks with item IDs from the fetched items
         isScrap: true,
+      })
+      .lean();
+
+    console.log(rack);
+
+    var rackWithStock: any = [];
+    for (var rk of rack) {
+      var stock = await this.itemRackQtyModel.findOne({
+        rackId: rk._id.toString(),
+        itemId: itemId,
+      });
+
+      rackWithStock.push({
+        _id: rk._id.toString(),
+        code: rk.code,
+        remark: rk.remark,
+        roomId: rk.roomId,
+        itemId: rk.itemId,
+        isScrap: rk.isScrap,
+        roomName: rk.roomName,
+        createdBy: rk.createdBy,
+        totalStockQuantity: stock?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: stock?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: stock?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: stock?.stockscrapQuantity ?? 0,
+      });
+    }
+
+    console.log(rackWithStock);
+    // Step 3: Find racks based on the item IDs and roomId
+    return rackWithStock;
+  }
+
+  async rackItemList(rackId: string) {
+    const itemsCheck = await this.rackModel.findById(rackId).lean();
+    if (!itemsCheck) {
+      return [];
+    }
+
+    return await this.model
+      .find({
+        rackId: { $in: itemsCheck._id.toString() },
       })
       .lean();
   }

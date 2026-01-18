@@ -27,7 +27,6 @@ export class StoreNewItemController {
 
   @Post()
   async create(@Body() dto: CreateItemDto) {
-
     console.log(dto);
 
     // return;
@@ -53,7 +52,7 @@ export class StoreNewItemController {
     @Param('id') itemId: string,
     @Body() dto: TransferRackDto,
   ) {
-    await this.s.transferRack(itemId, dto.toRackId, dto.createdBy);
+    await this.s.removeRackFromItem(itemId, dto.toRackId, dto.createdBy);
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});
     return { ok: true };

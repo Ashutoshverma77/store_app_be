@@ -18,15 +18,15 @@ export class Rack {
   roomId: string;
 
   // ✅ NEW
-  @Prop({ type: Boolean, default: false })
-  isOccupied: boolean;
+  // @Prop({ type: Boolean, default: false })
+  // isOccupied: boolean;
 
   // ✅ NEW (reference to item)
-  @Prop({ default: '' })
-  itemId: string;
+  @Prop({ default: [] })
+  itemId: [string];
 
-  @Prop({ default: '' })
-  itemName: string;
+  // @Prop({ default: '' })
+  // itemName: string;
 
   @Prop({ default: false })
   isScrap: boolean;

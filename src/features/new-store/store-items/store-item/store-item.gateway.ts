@@ -184,7 +184,7 @@ export class StoreNewItemGateway {
     client.emit('store:findAllReceivePaged', data);
   }
 
-  @SubscribeMessage('store:findRackByItemIdData')
+  @SubscribeMessage('store:findRackByItemIdScrapData')
   async findRackByItemId(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: any,
@@ -193,6 +193,18 @@ export class StoreNewItemGateway {
 
     const item = await this.s.scrapByItemId(itemId); // returns item or null
 
-    client.emit('store:findRackByItemIdData', item); // map or null
+    client.emit('store:findRackByItemIdScrapData', item); // map or null
+  }
+
+  @SubscribeMessage('store:findrackItemListData')
+  async findrackItemList(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: any,
+  ) {
+    const rackId = String(body?.rackId || '').trim();
+
+    const item = await this.s.rackItemList(rackId); // returns item or null
+
+    client.emit('store:findrackItemListData', item); // map or null
   }
 }

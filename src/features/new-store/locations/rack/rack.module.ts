@@ -14,6 +14,7 @@ import {
   ItemRackQty,
   ItemRackQtySchema,
 } from './entities/item-rack-qty.schema';
+import { StoreNewItem, StoreNewItemSchema } from '../../store-items/store-item/entities/store-item.schema';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import {
     RoomsModule,
     MongooseModule.forFeature(
       [
+        { name: StoreNewItem.name, schema: StoreNewItemSchema },
         { name: Rack.name, schema: RackSchema },
         { name: ItemRackQty.name, schema: ItemRackQtySchema },
         { name: StockTrack.name, schema: StockTrackSchema },

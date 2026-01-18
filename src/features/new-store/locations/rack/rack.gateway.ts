@@ -119,7 +119,8 @@ export class RackGateway {
     @ConnectedSocket() client: Socket,
   ) {
     const id = String(body?.roomid ?? '');
-    const res = await this.racks.findRackByRoom(id);
+    const itemId = String(body?.itemid ?? '');
+    const res = await this.racks.findRackByRoom(id, itemId);
     client.emit('store:findRackDataByRoomData', res);
   }
 
@@ -151,6 +152,17 @@ export class RackGateway {
     const id = String(body?.rackid ?? '');
     const res = await this.racks.findRackStock(id);
     client.emit('store:findRackStock', res);
+  }
+
+  @SubscribeMessage('store:findRackStockByItem')
+  async findRackStockByItem(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const id = String(body?.rackId ?? '');
+    const itemId = String(body?.itemId ?? '');
+    const res = await this.racks.findRackStockByItem(id, itemId);
+    client.emit('store:findRackStockByItem', res);
   }
 
   @SubscribeMessage('store:findNotOccupiedRackPaged')

@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { CreateRackDto } from './dto/create-rack.dto';
 import { UpdateRackDto } from './dto/update-rack.dto';
@@ -46,7 +47,7 @@ export class RacksController {
   }
 
   @Get('by-room/:id')
-  getByRoom(@Param('id') id: string) {
-    return this.service.findRackByRoom(id);
+  getByRoom(@Param('id') id: string, @Query('itemId') itemId: string) {
+    return this.service.findRackByRoom(id, itemId);
   }
 }
