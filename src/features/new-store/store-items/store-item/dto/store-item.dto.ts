@@ -8,9 +8,9 @@ import {
 } from 'class-validator';
 
 export class CreateItemDto {
-  @IsString() itemName: string;
-  @IsString() rackId: string;
-  @IsString() scrapRackId: string;
+  @IsOptional() @IsString() itemName: string;
+  @IsOptional() @IsString() rackId: string;
+  @IsOptional() @IsString() scrapRackId: string;
 
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsArray() subCategoryIds?: [string];

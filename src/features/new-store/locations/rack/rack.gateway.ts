@@ -11,7 +11,7 @@ import { RacksService } from './rack.service';
 @WebSocketGateway({ cors: { origin: '*', credentials: true } })
 export class RackGateway {
   @WebSocketServer() server: any;
-  constructor(private readonly racks: RacksService) {}
+  constructor(private readonly racks: RacksService) { }
 
   async broadcastAllRackList(body: any) {
     const list = await this.racks.findAllPaged({
@@ -122,6 +122,17 @@ export class RackGateway {
     const itemId = String(body?.itemid ?? '');
     const res = await this.racks.findRackByRoom(id, itemId);
     client.emit('store:findRackDataByRoomData', res);
+  }
+
+  @SubscribeMessage('store:findRackGoodDataByRoomData')
+  async findRackGoodByRoom(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const id = String(body?.roomid ?? '');
+    const itemId = String(body?.itemid ?? '');
+    const res = await this.racks.findRackByRoom(id, itemId);
+    client.emit('store:findRackGoodDataByRoomData', res);
   }
 
   @SubscribeMessage('store:findRackDataByItemData')

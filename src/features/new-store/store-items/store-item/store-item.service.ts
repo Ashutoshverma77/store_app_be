@@ -264,7 +264,9 @@ export class StoreNewItemService {
     return null;
   }
 
-
+  private escapeRegex(s: string) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
 
   async create(dto: CreateItemDto) {
     const itemName = (dto.itemName ?? '').trim();
@@ -273,7 +275,7 @@ export class StoreNewItemService {
       : [];
 
     // Valid if: either you are adding parents to subcats OR creating an itemName
-    if (!itemName && subCategoryIds.length === 0) {
+    if (dto.itemName == null && subCategoryIds.length === 0) {
       return { status: false, msg: 'Create Failed' };
     }
 
@@ -306,7 +308,7 @@ export class StoreNewItemService {
     }
 
     // If user only wanted to attach parentId(s) to subcategories
-    if (!itemName) {
+    if (dto.itemName == null) {
       return { status: true, msg: 'Category Added' };
     }
 
@@ -377,9 +379,13 @@ export class StoreNewItemService {
     const categoryLabel = await this.buildCategoryLabel(
       createdCategoryDoc._id ?? null,
     );
+    const re = new RegExp(`^${this.escapeRegex(prefix)}-`); // "^IT-"
+    const res = new RegExp(`^${this.escapeRegex(prefix)}S-`); // "^IT-"
 
-    const normalCount = await this.model.countDocuments({ isScrap: false });
-    const scrapCount = await this.model.countDocuments({ isScrap: true });
+
+    const normalCount = await this.model.countDocuments({ itemCode: re, isScrap: false });
+    const scrapCount = await this.model.countDocuments({ itemCode: res, isScrap: true });
+
 
     const normalItemCode = this.seq.format(prefix, normalCount + 1);
     const scrapItemCode = this.seq.format(`${prefix}S`, scrapCount + 1);
@@ -749,6 +755,14 @@ export class StoreNewItemService {
       // await session.endSession();
     }
   }
+  private codePrefix(code: string): string {
+    // Examples:
+    // "IT-AA001" -> "IT"
+    // "CT0001"   -> "CT"
+    // "ITS-001"  -> "ITS"
+    const m = (code ?? "").trim().match(/^[A-Za-z]+/);
+    return (m?.[0] ?? "").toUpperCase();
+  }
 
   /* -------------------- Reads -------------------- */
 
@@ -765,7 +779,20 @@ export class StoreNewItemService {
 
     const filter: FilterQuery<StoreNewItem> = {};
     if (q.rackId) filter.rackId = this.oid(q.rackId);
-    if (q.categoryId) filter.categoryId = this.oid(q.categoryId);
+    if (q.categoryId) {
+      const cat = await this.catModel.findById(this.oid(q.categoryId)).lean();
+      if (!cat) throw new BadRequestException("Category not found");
+
+      const prefix = this.codePrefix(String(cat.code ?? ""));
+      if (prefix) {
+        // itemCode like: "IT-AA001" -> matches "^IT-"
+        filter.itemCode = new RegExp(`^${this.escapeRegex(prefix)}-`, "i");
+      } else {
+        // Fallback (optional): if code missing, use direct categoryId match
+        filter.categoryId = this.oid(q.categoryId);
+      }
+    }
+
 
     const search = (q.search || '').trim();
     if (search) {
@@ -858,7 +885,19 @@ export class StoreNewItemService {
 
     const filter: FilterQuery<StoreNewItem> = {};
     if (q.rackId) filter.rackId = this.oid(q.rackId);
-    if (q.categoryId) filter.categoryId = this.oid(q.categoryId);
+    if (q.categoryId) {
+      const cat = await this.catModel.findById(this.oid(q.categoryId)).lean();
+      if (!cat) throw new BadRequestException("Category not found");
+
+      const prefix = this.codePrefix(String(cat.code ?? ""));
+      if (prefix) {
+        // itemCode like: "IT-AA001" -> matches "^IT-"
+        filter.itemCode = new RegExp(`^${this.escapeRegex(prefix)}S-`, "i");
+      } else {
+        // Fallback (optional): if code missing, use direct categoryId match
+        filter.categoryId = this.oid(q.categoryId);
+      }
+    }
 
     const search = (q.search || '').trim();
     if (search) {
