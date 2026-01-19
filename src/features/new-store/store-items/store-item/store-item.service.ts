@@ -76,7 +76,7 @@ export class StoreNewItemService {
     private readonly userService: UserService,
 
     private readonly seq: CounterService,
-  ) { }
+  ) {}
 
   /* -------------------- helpers -------------------- */
 
@@ -245,16 +245,18 @@ export class StoreNewItemService {
   /* -------------------- CRUD -------------------- */
 
   private normalizeName(v: string): string {
-    return (v ?? "").toLowerCase().replace(/\s+/g, "");
+    return (v ?? '').toLowerCase().replace(/\s+/g, '');
   }
 
   async findExactItemName(itemName?: string): Promise<string | null> {
-    const inputNorm = this.normalizeName(itemName ?? "");
+    const inputNorm = this.normalizeName(itemName ?? '');
     if (!inputNorm) return null;
 
     const items = await this.model.find({}, { name: 1 }).lean();
 
-    const found: any = items.find((x: any) => this.normalizeName(x.name) === inputNorm);
+    const found: any = items.find(
+      (x: any) => this.normalizeName(x.name) === inputNorm,
+    );
 
     // condition + return
     if (found) {
@@ -265,7 +267,7 @@ export class StoreNewItemService {
   }
 
   private escapeRegex(s: string) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   async create(dto: CreateItemDto) {
@@ -315,11 +317,10 @@ export class StoreNewItemService {
     const exactName = await this.findExactItemName(dto.itemName);
 
     if (exactName) {
-      return { status: false, msg: "Item already exists", exactName };
+      return { status: false, msg: 'Item already exists', exactName };
     }
 
     // else continue creating item
-
 
     // 2) Now do the item creation path
     const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
@@ -346,13 +347,11 @@ export class StoreNewItemService {
     const parentIdsForNewCategory = [dto.categoryId];
 
     const code = categoryParent.code;
-    const idx = code.indexOf("-");
+    const idx = code.indexOf('-');
     const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
 
     const catCount = await this.catModel.countDocuments();
     const categoryCode = this.seq.format(prefix, catCount + 1);
-
-
 
     const createdCategoryArr = await this.catModel.create([
       {
@@ -382,10 +381,14 @@ export class StoreNewItemService {
     const re = new RegExp(`^${this.escapeRegex(prefix)}-`); // "^IT-"
     const res = new RegExp(`^${this.escapeRegex(prefix)}S-`); // "^IT-"
 
-
-    const normalCount = await this.model.countDocuments({ itemCode: re, isScrap: false });
-    const scrapCount = await this.model.countDocuments({ itemCode: res, isScrap: true });
-
+    const normalCount = await this.model.countDocuments({
+      itemCode: re,
+      isScrap: false,
+    });
+    const scrapCount = await this.model.countDocuments({
+      itemCode: res,
+      isScrap: true,
+    });
 
     const normalItemCode = this.seq.format(prefix, normalCount + 1);
     const scrapItemCode = this.seq.format(`${prefix}S`, scrapCount + 1);
@@ -760,8 +763,8 @@ export class StoreNewItemService {
     // "IT-AA001" -> "IT"
     // "CT0001"   -> "CT"
     // "ITS-001"  -> "ITS"
-    const m = (code ?? "").trim().match(/^[A-Za-z]+/);
-    return (m?.[0] ?? "").toUpperCase();
+    const m = (code ?? '').trim().match(/^[A-Za-z]+/);
+    return (m?.[0] ?? '').toUpperCase();
   }
 
   /* -------------------- Reads -------------------- */
@@ -781,18 +784,17 @@ export class StoreNewItemService {
     if (q.rackId) filter.rackId = this.oid(q.rackId);
     if (q.categoryId) {
       const cat = await this.catModel.findById(this.oid(q.categoryId)).lean();
-      if (!cat) throw new BadRequestException("Category not found");
+      if (!cat) throw new BadRequestException('Category not found');
 
-      const prefix = this.codePrefix(String(cat.code ?? ""));
+      const prefix = this.codePrefix(String(cat.code ?? ''));
       if (prefix) {
         // itemCode like: "IT-AA001" -> matches "^IT-"
-        filter.itemCode = new RegExp(`^${this.escapeRegex(prefix)}-`, "i");
+        filter.itemCode = new RegExp(`^${this.escapeRegex(prefix)}-`, 'i');
       } else {
         // Fallback (optional): if code missing, use direct categoryId match
         filter.categoryId = this.oid(q.categoryId);
       }
     }
-
 
     const search = (q.search || '').trim();
     if (search) {
@@ -878,6 +880,32 @@ export class StoreNewItemService {
     return { rows: receiveData, total, page, limit };
   }
 
+  async findAllReceive() {
+    console.log("data");
+    var receiveData: any = [];
+    var data = await this.receiveModel.find().lean();
+
+    for (var rec of data) {
+      var user = await this.userService.findById(rec.receivedBy);
+      var item = await this.model.findById(rec.lines[0].itemId);
+      var rack = await this.rackModel.findById(rec.lines[0].rackId);
+      receiveData.push({
+        receivedBy: user?.name,
+        itemId: item?.id,
+        itemCode: item?.itemCode,
+        itemName: item?.itemName,
+        rackId: rack?.id,
+        roomName: rack?.roomName,
+        rackCode: rack?.code,
+        qty: rec.lines[0].qty,
+        remark: rec?.remark,
+        createdAt: rec.createdAt,
+      });
+    }
+
+    return receiveData;
+  }
+
   async findScrapAllItemPaged(q: ItemPagedQueryDto) {
     const page = Math.max(1, Number(q.page || 1));
     const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
@@ -887,12 +915,12 @@ export class StoreNewItemService {
     if (q.rackId) filter.rackId = this.oid(q.rackId);
     if (q.categoryId) {
       const cat = await this.catModel.findById(this.oid(q.categoryId)).lean();
-      if (!cat) throw new BadRequestException("Category not found");
+      if (!cat) throw new BadRequestException('Category not found');
 
-      const prefix = this.codePrefix(String(cat.code ?? ""));
+      const prefix = this.codePrefix(String(cat.code ?? ''));
       if (prefix) {
         // itemCode like: "IT-AA001" -> matches "^IT-"
-        filter.itemCode = new RegExp(`^${this.escapeRegex(prefix)}S-`, "i");
+        filter.itemCode = new RegExp(`^${this.escapeRegex(prefix)}S-`, 'i');
       } else {
         // Fallback (optional): if code missing, use direct categoryId match
         filter.categoryId = this.oid(q.categoryId);

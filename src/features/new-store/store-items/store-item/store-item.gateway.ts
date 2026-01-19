@@ -184,6 +184,13 @@ export class StoreNewItemGateway {
     client.emit('store:findAllReceivePaged', data);
   }
 
+  @SubscribeMessage('store:findAllReceive')
+  async findAllReceive(@ConnectedSocket() client: Socket,) {
+    const data = await this.s.findAllReceive();
+
+    client.emit('store:findAllReceive', data);
+  }
+
   @SubscribeMessage('store:findRackByItemIdScrapData')
   async findRackByItemId(
     @ConnectedSocket() client: Socket,
