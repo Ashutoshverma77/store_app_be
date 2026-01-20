@@ -41,10 +41,21 @@ export class StoreNewItemController {
     @Param('id') id: string,
     @Body() dto: Omit<UpdateItemDto, 'id'>,
   ) {
+    console.log(dto);
+
+    // return;
     const data = await this.s.update({ ...dto, id });
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});
-    return { status: true, msg: 'Updated', data };
+    if (dto.categoryIds!.length > 0 && dto.rackId != null && dto.rackId != '') {
+      return { status: true, msg: 'Updated', data };
+    } else {
+      if (dto.categoryIds!.length > 0) {
+        return { status: true, msg: 'Category Removed', data };
+      } else {
+        return { status: true, msg: 'Rack Added', data };
+      }
+    }
   }
 
   @Put(':id/transfer-rack')

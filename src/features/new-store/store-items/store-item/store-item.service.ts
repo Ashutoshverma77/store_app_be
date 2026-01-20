@@ -507,7 +507,6 @@ export class StoreNewItemService {
   }
 
   async update(dto: UpdateItemDto) {
-    console.log(dto);
     var item = await this.model.findById(dto.id);
     if (!item) throw new BadRequestException('Item not found');
     const operatedBy = this.mustOperatorId(dto.createdBy, 'updatedBy');
@@ -528,24 +527,37 @@ export class StoreNewItemService {
       //   patch.itemName = itemName.name;
       //   patch.itemNameCode = itemName.code;
       // }
+
       var addrack: any = [];
       addrack = item.rackId;
-      if (dto.rackId != null) {
+      if (dto.rackId != null && dto.rackId != '') {
         const rack = await this.rackModel.findById(dto.rackId).lean();
         if (!rack) throw new BadRequestException('Rack not found');
         addrack.push(dto.rackId);
         patch.rackId = addrack;
       }
 
-      if (dto.categoryId !== undefined) {
-        patch.categoryId = dto.categoryId ? this.oid(dto.categoryId) : null;
-        patch.categoryLabel = await this.buildCategoryLabel(
-          dto.categoryId ?? null,
+      // if (dto.categoryId !== undefined) {
+      //   patch.categoryId = dto.categoryId ? this.oid(dto.categoryId) : null;
+      //   patch.categoryLabel = await this.buildCategoryLabel(
+      //     dto.categoryId ?? null,
+      //   );
+      // }
+      if (dto.categoryIds!.length > 0) {
+        // If your category _id is ObjectId (almost certainly)
+        const ids = dto.categoryIds!.map((id) => new Types.ObjectId(id));
+
+        // parentId in your example looks like string[].
+        // If parentId is ObjectId[] in schema, use new Types.ObjectId(dto.categoryId) instead.
+        const parentToRemove = dto.categoryId;
+
+        await this.catModel.updateMany(
+          { _id: { $in: ids } },
+          { $pull: { parentId: parentToRemove } },
         );
       }
-
-      if (dto.unit != null) patch.unit = dto.unit;
-      if (dto.description != null) patch.description = dto.description;
+      // if (dto.unit != null) patch.unit = dto.unit;
+      // if (dto.description != null) patch.description = dto.description;
       // if (dto.imageUrl != null) patch.imageUrl = dto.imageUrl;
 
       const prev = await this.model.findById(this.oid(dto.id));
@@ -556,7 +568,7 @@ export class StoreNewItemService {
       // const fromRackId = prev.rackId ? String(prev.rackId) : null;
       // const toRackId = dto.rackId ? String(dto.rackId) : null;
 
-      if (dto.rackId != null) {
+      if (dto.rackId != null && dto.rackId != '') {
         await this.occupyRackIfFree(
           dto.rackId,
           String(prev._id),
@@ -881,7 +893,7 @@ export class StoreNewItemService {
   }
 
   async findAllReceive() {
-    console.log("data");
+    console.log('data');
     var receiveData: any = [];
     var data = await this.receiveModel.find().lean();
 

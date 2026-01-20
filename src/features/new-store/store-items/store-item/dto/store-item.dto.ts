@@ -28,7 +28,7 @@ export class UpdateItemDto {
   // @IsOptional() @IsString() itemNameId?: string;
   @IsOptional() @IsString() rackId?: string;
   @IsOptional() @IsString() categoryId?: string | null;
-
+  @IsOptional() @IsArray() categoryIds?: [string];
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsString() description?: string;
 
