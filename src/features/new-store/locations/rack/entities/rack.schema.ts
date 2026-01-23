@@ -23,7 +23,7 @@ export class Rack {
 
   // ✅ NEW (reference to item)
   @Prop({ default: [] })
-  itemId: [string];
+  itemId: string[];
 
   // @Prop({ default: '' })
   // itemName: string;

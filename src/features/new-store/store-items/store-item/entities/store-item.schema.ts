@@ -24,6 +24,9 @@ export class StoreNewItem extends Document {
   @Prop({ default: '' })
   categoryId?: string;
 
+  @Prop({ type: [String], default: [] })
+  subCategoryIds: string[];
+
   @Prop({ default: '' })
   categoryLabel: string; // "Category > Subcategory" or "Category"
 

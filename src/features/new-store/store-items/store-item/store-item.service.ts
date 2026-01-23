@@ -17,7 +17,7 @@ import {
 } from 'mongoose';
 import { StoreItemName } from '../store-item-name/entities/store-item-name.schema';
 import { StoreCategory } from '../store-category/entities/store-category.schema';
-import { Rack } from '../../locations/rack/entities/rack.schema';
+import { Rack, RackDocument } from '../../locations/rack/entities/rack.schema'; // Import RackDocument
 import { StoreReceive } from './entities/store-receive.schema';
 import {
   StockTrack,
@@ -39,6 +39,7 @@ import {
   ItemRackQtyDocument,
 } from '../../locations/rack/entities/item-rack-qty.schema';
 import { StoreUnitName } from '../store-unit-name/entities/store-unit-name.schema';
+import { RoomsService } from '../../locations/room/room.service'; // Import RoomsService
 
 @Injectable()
 export class StoreNewItemService {
@@ -76,6 +77,7 @@ export class StoreNewItemService {
     private readonly userService: UserService,
 
     private readonly seq: CounterService,
+    private readonly rooms: RoomsService, // Injected RoomsService
   ) {}
 
   /* -------------------- helpers -------------------- */
@@ -275,235 +277,239 @@ export class StoreNewItemService {
     const subCategoryIds = Array.isArray(dto.subCategoryIds)
       ? dto.subCategoryIds.filter(Boolean)
       : [];
+    const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
 
-    // Valid if: either you are adding parents to subcats OR creating an itemName
-    if (dto.itemName == null && subCategoryIds.length === 0) {
-      return { status: false, msg: 'Create Failed' };
+    // 1) Validate Category Selection
+    if (!dto.categoryId) {
+      throw new BadRequestException('categoryId is required');
+    }
+    const category = await this.catModel.findById(this.oid(dto.categoryId)).lean();
+    if (!category) {
+      throw new BadRequestException('Category not found');
     }
 
-    // Validate categoryId when needed
-    if (dto.categoryId && !Types.ObjectId.isValid(dto.categoryId)) {
-      throw new BadRequestException('Invalid categoryId');
+    // Rule: if subCategoryIds are empty, itemName is required. Otherwise, itemName can be derived.
+    if (subCategoryIds.length === 0 && itemName.length === 0) {
+      throw new BadRequestException(
+        'Item name is required if no subcategories are selected',
+      );
     }
-    const categoryIdObj = dto.categoryId;
-
-    // 1) Update subcategories to include categoryId as parent (if provided)
-    if (subCategoryIds.length > 0) {
-      const subObjIds = subCategoryIds.map((id) => {
-        if (!Types.ObjectId.isValid(id)) {
-          throw new BadRequestException(`Invalid subCategoryId: ${id}`);
-        }
-        return new Types.ObjectId(id);
+    // Rule: if subCategoryIds are provided, validate them
+    const subCategoryOids: Types.ObjectId[] = [];
+    for (const subCatId of subCategoryIds) {
+      if (!Types.ObjectId.isValid(subCatId)) {
+        throw new BadRequestException(`Invalid subCategoryId: ${subCatId}`);
+      }
+      subCategoryOids.push(this.oid(subCatId));
+    }
+    if (subCategoryOids.length > 0) {
+      const existingSubCategories = await this.catModel.countDocuments({
+        _id: { $in: subCategoryOids },
+        parentId: this.oid(dto.categoryId),
       });
+      if (existingSubCategories !== subCategoryOids.length) {
+        throw new BadRequestException('One or more subcategories are invalid or not children of the selected category');
+      }
+    }
 
-      if (!categoryIdObj) {
-        throw new BadRequestException(
-          'categoryId required when subCategoryIds provided',
+    // 2) Validate Rack and Scrap Rack (including isOneRack rule)
+    let goodRack: Rack | null = null;
+    if (dto.rackId) {
+      goodRack = (await this.rackModel.findById(this.oid(dto.rackId)).lean()) as Rack;
+      if (!goodRack) throw new BadRequestException('Good rack not found');
+
+      const room = await this.rooms.findOne(goodRack.roomId);
+      if (room.isOneRack) {
+        const itemsInRack = await this.model.countDocuments({
+          rackId: (goodRack as any)._id.toString(),
+          isScrap: false,
+        });
+        if (itemsInRack > 0) {
+          throw new BadRequestException(
+            'Cannot add multiple items to a single-rack room/rack.',
+          );
+        }
+      }
+    }
+
+    let scrapRack: Rack | null = null;
+    if (dto.scrapRackId) {
+      scrapRack = (await this.rackModel.findById(this.oid(dto.scrapRackId)).lean()) as Rack;
+      if (!scrapRack) throw new BadRequestException('Scrap rack not found');
+
+      const room = await this.rooms.findOne(scrapRack.roomId);
+      if (room.isOneRack) {
+        const itemsInRack = await this.model.countDocuments({
+          rackId: (scrapRack as any)._id.toString(),
+          isScrap: true,
+        });
+        if (itemsInRack > 0) {
+          throw new BadRequestException(
+            'Cannot add multiple items to a single-rack room/rack.',
+          );
+        }
+      }
+    }
+
+    // 3) Validate Unit
+    let unitDoc: StoreUnitName | null = null;
+    if (dto.unit) {
+      unitDoc = (await this.itemUnitModel.findById(this.oid(dto.unit)).lean()) as StoreUnitName;
+      if (!unitDoc) throw new BadRequestException('Unit not found');
+    }
+
+    // Start Transaction
+    const session = await this.conn.startSession();
+    session.startTransaction();
+
+    try {
+      const categoryLabel = await this.buildCategoryLabel(dto.categoryId);
+
+      // 4) Generate unique item codes
+      const normalItemCode = await this.seq.nextCode('item', 'IT');
+      const scrapItemCode = await this.seq.nextCode('item', 'ITS');
+
+      // 5) Create Normal Item
+      const [createdItemDoc]: any = await this.model.create(
+        [
+          {
+            itemName: itemName.toUpperCase(),
+            itemCode: normalItemCode.code,
+            isScrap: false,
+            rackId: dto.rackId ? [dto.rackId] : [],
+            categoryId: this.oid(dto.categoryId!),
+            subCategoryIds: subCategoryOids.map(id => id.toString()),
+            categoryLabel: categoryLabel,
+            unit: unitDoc?.name ?? '',
+            unitId: (unitDoc?._id as Types.ObjectId)?.toString() ?? '',
+            description: dto.description ?? '',
+            totalStockQuantity: 0,
+            stockAvailableQuantity: 0,
+            stockIssueQuantity: 0,
+            stockissueCompleted: 0,
+            stockscrapQuantity: 0,
+            imageUrl: dto.imageUrl ?? '',
+            createdBy: dto.createdBy ?? '',
+          },
+        ],
+        { session },
+      );
+
+      // 6) Create Scrap Item (linked to the same category)
+      const [createdScrapDoc]: any = await this.model.create(
+        [
+          {
+            itemName: itemName.toUpperCase(),
+            itemCode: scrapItemCode.code,
+            isScrap: true,
+            rackId: dto.scrapRackId ? [dto.scrapRackId] : [],
+            categoryId: this.oid(dto.categoryId!),
+            subCategoryIds: subCategoryOids.map(id => id.toString()),
+            categoryLabel: categoryLabel,
+            unit: unitDoc?.name ?? '',
+            unitId: (unitDoc?._id as Types.ObjectId)?.toString() ?? '',
+            description: dto.description ?? '',
+            totalStockQuantity: 0,
+            stockAvailableQuantity: 0,
+            stockIssueQuantity: 0,
+            stockissueCompleted: 0,
+            stockscrapQuantity: 0,
+            imageUrl: dto.imageUrl ?? '',
+            createdBy: dto.createdBy ?? '',
+          },
+        ],
+        { session },
+      );
+
+      // 7) Update Racks with itemId and create ItemRackQty entries
+      if (goodRack && createdItemDoc) {
+        await this.rackModel.updateOne(
+          { _id: (goodRack as any)._id },
+          { $addToSet: { itemId: createdItemDoc._id.toString() } },
+          { session },
+        );
+        await this.itemRackQtyModel.create(
+          [
+            {
+              itemId: createdItemDoc._id.toString(),
+              itemName: createdItemDoc.itemName,
+              rackId: (goodRack as any)._id.toString(),
+              rackCode: goodRack.code,
+              totalStockQuantity: 0,
+              stockAvailableQuantity: 0,
+              stockIssueQuantity: 0,
+              stockissueCompleted: 0,
+              stockscrapQuantity: 0,
+            },
+          ],
+          { session },
         );
       }
 
-      // Atomic + dedupe, avoids your loop and "cantain" bug
-      await this.catModel.updateMany(
-        { _id: { $in: subObjIds } },
-        { $addToSet: { parentId: categoryIdObj } },
-      );
+      if (scrapRack && createdScrapDoc) {
+        await this.rackModel.updateOne(
+          { _id: (scrapRack as any)._id },
+          { $addToSet: { itemId: createdScrapDoc._id.toString() } },
+          { session },
+        );
+        await this.itemRackQtyModel.create(
+          [
+            {
+              itemId: createdScrapDoc._id.toString(),
+              itemName: createdScrapDoc.itemName,
+              rackId: (scrapRack as any)._id.toString(),
+              rackCode: scrapRack.code,
+              totalStockQuantity: 0,
+              stockAvailableQuantity: 0,
+              stockIssueQuantity: 0,
+              stockissueCompleted: 0,
+              stockscrapQuantity: 0,
+            },
+          ],
+          { session },
+        );
+      }
+
+      // 8) Track creation for both normal and scrap items
+      if (createdItemDoc) {
+        await this.track({
+          type: 'CREATE',
+          qty: 0,
+          operatedBy: String(operatedBy),
+          itemId: String(createdItemDoc._id),
+          categoryId: String(createdItemDoc.categoryId ?? ''),
+          rackId: dto.rackId ? String(dto.rackId) : '',
+          refNo: String(createdItemDoc.itemName ?? ''),
+          note: `Normal Item created: ${String(createdItemDoc.itemName ?? '')} (${String(
+            createdItemDoc.categoryLabel ?? '',
+          )})`,
+        });
+      }
+
+      if (createdScrapDoc) {
+        await this.track({
+          type: 'CREATE',
+          qty: 0,
+          operatedBy: String(operatedBy),
+          itemId: String(createdScrapDoc._id),
+          categoryId: String(createdScrapDoc.categoryId ?? ''),
+          rackId: dto.scrapRackId ? String(dto.scrapRackId) : '',
+          refNo: String(createdScrapDoc.itemName ?? ''),
+          note: `Scrap Item created: ${String(createdScrapDoc.itemName ?? '')} (${String(
+            createdScrapDoc.categoryLabel ?? '',
+          )})`,
+        });
+      }
+
+      await session.commitTransaction();
+
+      return { status: true, msg: 'Created', data: createdItemDoc.toObject() };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
-
-    // If user only wanted to attach parentId(s) to subcategories
-    if (dto.itemName == null) {
-      return { status: true, msg: 'Category Added' };
-    }
-
-    const exactName = await this.findExactItemName(dto.itemName);
-
-    if (exactName) {
-      return { status: false, msg: 'Item already exists', exactName };
-    }
-
-    // else continue creating item
-
-    // 2) Now do the item creation path
-    const operatedBy = this.mustOperatorId(dto.createdBy, 'createdBy');
-
-    const unitName = await this.itemUnitModel.findById(dto.unit).lean();
-    if (!unitName) throw new BadRequestException('Unit not found');
-
-    if (dto.rackId && dto.rackId !== '') {
-      const rack = await this.rackModel.findById(dto.rackId).lean();
-      if (!rack) throw new BadRequestException('Rack not found');
-    }
-
-    if (dto.scrapRackId && dto.scrapRackId !== '') {
-      const rackScrap = await this.rackModel.findById(dto.scrapRackId).lean();
-      if (!rackScrap) throw new BadRequestException('Rack not found');
-    }
-
-    const categoryParent = await this.catModel.findById(dto.categoryId).lean();
-    if (!categoryParent) throw new BadRequestException('Category not found');
-
-    // Decide where this new category should sit in the tree:
-    // - If user selected subCategoryIds, parentId = subCategoryIds
-    // - Else parentId = [categoryId]
-    const parentIdsForNewCategory = [dto.categoryId];
-
-    const code = categoryParent.code;
-    const idx = code.indexOf('-');
-    const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
-
-    const catCount = await this.catModel.countDocuments();
-    const categoryCode = this.seq.format(prefix, catCount + 1);
-
-    const createdCategoryArr = await this.catModel.create([
-      {
-        code: categoryCode,
-        name: itemName,
-        remark: dto.description ?? '',
-        parentId: parentIdsForNewCategory,
-        createdBy: dto.createdBy ?? '',
-        isbag:
-          categoryParent.parentId.length < 1 && categoryParent.isbag === true,
-        isMachine:
-          categoryParent.parentId.length < 1 &&
-          categoryParent.isMachine === true,
-        isNormalItem:
-          categoryParent.parentId.length < 1 &&
-          categoryParent.isNormalItem === true,
-      },
-    ]);
-
-    const createdCategoryDoc: any = createdCategoryArr?.[0];
-    if (!createdCategoryDoc)
-      throw new BadRequestException('Category create failed');
-
-    const categoryLabel = await this.buildCategoryLabel(
-      createdCategoryDoc._id ?? null,
-    );
-    const re = new RegExp(`^${this.escapeRegex(prefix)}-`); // "^IT-"
-    const res = new RegExp(`^${this.escapeRegex(prefix)}S-`); // "^IT-"
-
-    const normalCount = await this.model.countDocuments({
-      itemCode: re,
-      isScrap: false,
-    });
-    const scrapCount = await this.model.countDocuments({
-      itemCode: res,
-      isScrap: true,
-    });
-
-    const normalItemCode = this.seq.format(prefix, normalCount + 1);
-    const scrapItemCode = this.seq.format(`${prefix}S`, scrapCount + 1);
-
-    // -------------------- NORMAL ITEM --------------------
-    const createdItemArr = await this.model.create([
-      {
-        itemName: itemName.toUpperCase(),
-        itemCode: normalItemCode,
-        isScrap: false,
-
-        rackId: [],
-        categoryId: createdCategoryDoc._id,
-        categoryLabel,
-
-        unit: unitName.name ?? '',
-        unitId: unitName._id ?? '',
-        description: dto.description ?? '',
-
-        totalStockQuantity: 0,
-        stockAvailableQuantity: 0,
-        stockIssueQuantity: 0,
-        stockissueCompleted: 0,
-        stockscrapQuantity: 0,
-
-        imageUrl: dto.imageUrl ?? '',
-        createdBy: dto.createdBy ?? '',
-      },
-    ]);
-
-    const createdItemDoc: any = createdItemArr?.[0];
-    if (!createdItemDoc) throw new BadRequestException('Create failed');
-
-    if (dto.rackId && dto.rackId !== '') {
-      await this.model.updateOne(
-        { _id: createdItemDoc._id },
-        { $addToSet: { rackId: dto.rackId.toString() } },
-      );
-
-      await this.occupyRackIfFree(
-        dto.rackId,
-        String(createdItemDoc._id),
-        String(createdItemDoc.itemName),
-      );
-    }
-
-    await this.track({
-      type: 'CREATE',
-      qty: 0,
-      operatedBy: String(operatedBy),
-      itemId: String(createdItemDoc._id),
-      categoryId: String(createdItemDoc.categoryId ?? ''),
-      rackId: dto.rackId ? String(dto.rackId) : '',
-      refNo: String(createdItemDoc.itemName ?? ''),
-      note: `Item created: ${String(createdItemDoc.itemName ?? '')} (${String(
-        createdItemDoc.categoryLabel ?? '',
-      )})`,
-    });
-
-    // -------------------- SCRAP ITEM --------------------
-    const createdScrapArr = await this.model.create([
-      {
-        itemName: itemName.toUpperCase(),
-        itemCode: scrapItemCode,
-        isScrap: true,
-
-        rackId: [],
-        categoryId: createdCategoryDoc._id,
-        categoryLabel,
-
-        unit: unitName.name ?? '',
-        unitId: unitName._id ?? '',
-        description: dto.description ?? '',
-
-        totalStockQuantity: 0,
-        stockAvailableQuantity: 0,
-        stockIssueQuantity: 0,
-        stockissueCompleted: 0,
-        stockscrapQuantity: 0,
-
-        imageUrl: dto.imageUrl ?? '',
-        createdBy: dto.createdBy ?? '',
-      },
-    ]);
-
-    const createdScrapDoc: any = createdScrapArr?.[0];
-    if (!createdScrapDoc) throw new BadRequestException('Create failed');
-
-    if (dto.scrapRackId && dto.scrapRackId !== '') {
-      await this.model.updateOne(
-        { _id: createdScrapDoc._id },
-        { $addToSet: { rackId: dto.scrapRackId.toString() } },
-      );
-
-      await this.occupyRackIfFree(
-        dto.scrapRackId,
-        String(createdScrapDoc._id),
-        String(createdScrapDoc.itemName),
-      );
-    }
-
-    await this.track({
-      type: 'CREATE',
-      qty: 0,
-      operatedBy: String(operatedBy),
-      itemId: String(createdScrapDoc._id),
-      categoryId: String(createdScrapDoc.categoryId ?? ''),
-      rackId: dto.scrapRackId ? String(dto.scrapRackId) : '',
-      refNo: String(createdScrapDoc.itemName ?? ''),
-      note: `Item created: ${String(createdScrapDoc.itemName ?? '')} (${String(
-        createdScrapDoc.categoryLabel ?? '',
-      )})`,
-    });
-
-    return { status: true, msg: 'Created', data: createdItemDoc.toObject() };
   }
 
   async update(dto: UpdateItemDto) {

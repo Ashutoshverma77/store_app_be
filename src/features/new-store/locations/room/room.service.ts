@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, SortOrder, Types } from 'mongoose';
+import { CreateRackRoomDto } from './dto/create-rack-room.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { Room, RoomDocument } from './entities/room.schema';
@@ -38,7 +39,8 @@ export class RoomsService {
     private readonly trackModel: Model<StockTrackDocument>,
 
     private readonly counterService: CounterService,
-  ) { }
+    @InjectConnection('store') private readonly connection: Connection,
+  ) {}
 
   private sortObj(sort?: string): Record<string, SortOrder> {
     const s = (sort ?? '-createdAt').trim();
@@ -345,112 +347,107 @@ export class RoomsService {
     }
   }
 
-  async createrackroom(dto: any) {
-    // console.log(dto);
-    // const operatedBy = this.getOperatorId(dto);
-    // if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
+  async createrackroom(dto: CreateRackRoomDto) {
+    const { isOneRack, remark, createdBy, rackmake, isScrap } = dto;
+    const operatedBy = this.getOperatorId(dto);
+    if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
 
-    // const session = await
+    let prifix = '';
+    if (isOneRack == false && isScrap == false) {
+      prifix = 'RGI';
+    } else if (isOneRack == false && isScrap == true) {
+      prifix = 'RSI';
+    } else if (isOneRack == true && isScrap == false) {
+      prifix = 'RM';
+    } else if (isOneRack == true && isScrap == true) {
+      prifix = 'RMS';
+    }
+
+    const session = await this.connection.startSession();
+    session.startTransaction();
+
     try {
-      const { isOneRack, remark, createdBy, rackmake, isScrap } = dto;
-      // const coderoom = await this.counterService.nextCode('room', 'RM');
-      // var check = await this.model.find();
-
-      var check = await this.model.find({
-        isOneRack: dto.isOneRack,
-        isScrap: dto.isScrap,
-      });
-      var codeNo = check.length + 1;
-      var prifix = '';
-      if (isOneRack == false && isScrap == false) {
-        prifix = 'RGI';
-      }
-
-      if (isOneRack == false && isScrap == true) {
-        prifix = 'RSI';
-      }
-
-      if (isOneRack == true && isScrap == false) {
-        prifix = 'RM';
-      }
-
-      if (isOneRack == true && isScrap == true) {
-        prifix = 'RMS';
-      }
-      const format = this.counterService.format(
-        `ROOM-${prifix}`,
-        check.length + 1,
+      const { code: roomCode } = await this.counterService.nextCode(
+        'room',
+        prifix,
       );
-      var count = check.length + 1;
-      // Step 1: Create the room
-      const newRoom = await this.model.create({
-        code: `${prifix}-${count}`,
-        isOneRack,
-        isScrap,
-        remark: remark ?? '',
-        createdBy: createdBy ?? '',
-      });
 
-      // Step 2: Create the racks
-      // const racks = [];
+      const createdRoom: RoomDocument[] = await this.model.create(
+        [
+          {
+            code: roomCode,
+            isOneRack,
+            isScrap,
+            remark: remark ?? '',
+            createdBy: createdBy ?? '',
+          },
+        ],
+        { session },
+      );
+
+      const newRoom: RoomDocument = createdRoom[0];
+
+      const rackDocs: Rack[] = [];
+      const trackDocs: StockTrack[] = [];
+
       for (let i = 0; i < rackmake; i++) {
-        // const { code } = await this.counterService.nextCode('rack', 'RK');
-        const formet = this.counterService.format(
-          `${prifix}${count}`,
-          i + 1,
+        const { code: rackCode } = await this.counterService.nextCode(
+          'rack',
+          `RK-${prifix}`,
         );
-
-        var rack = await this.rackmodel.create({
-          code: formet,
-          // name,
+        const rackId = new Types.ObjectId();
+        rackDocs.push({
+          code: rackCode,
           isScrap,
           remark: remark ?? '',
-          roomId: newRoom._id,
-          roomName: newRoom?.code ?? '',
+          roomId: (newRoom._id as Types.ObjectId).toString(),
+          roomName: newRoom.code,
           createdBy: createdBy ?? '',
+          itemId: [],
+          isActive: false,
         });
-
-        await this.trackModel.create([
-          {
-            operatedBy: createdBy,
-            type: 'CREATE',
-            qty: 0,
-            refNo: rack?.code ?? '',
-            rackId: rack?._id ?? '',
-            itemId: '',
-            note: `Rack created: ${rack?.code ?? ''}`,
-          },
-        ]);
+        trackDocs.push({
+          operatedBy: operatedBy.toString(),
+          type: 'CREATE',
+          qty: 0,
+          refNo: rackCode,
+          rackId: rackId.toString(),
+          note: `Rack created: ${rackCode}`,
+          itemId: '', // Default value based on schema
+          categoryId: '', // Default value based on schema
+          receivingId: '', // Default value based on schema
+          issueId: '', // Default value based on schema
+        });
       }
 
-      // Step 3: Save racks
-
-      // return { status: true, msg: 'Room and racks created successfully' };
-
-      // created = created?.[0];
+      await this.rackmodel.insertMany(rackDocs, { session });
+      await this.trackModel.insertMany(trackDocs, { session });
 
       await this.trackModel.create(
         [
           {
-            operatedBy: createdBy,
+            operatedBy: operatedBy.toString(),
             type: 'CREATE',
             qty: 0,
-            refNo: newRoom?.code ?? '',
-            note: `Room created: ${newRoom?.code ?? ''}`,
-            itemId: '',
-            categoryId: '',
-            rackId: '',
-            receivingId: '',
-            issueId: '',
+            refNo: (newRoom._id as Types.ObjectId).toString(),
+            note: `Room created: ${newRoom.code}`,
+            itemId: '', // Default value
+            categoryId: '', // Default value
+            rackId: '', // Default value
+            receivingId: '', // Default value
+            issueId: '', // Default value
           },
         ],
-        // { session },
+        { session },
       );
-      // });
 
+      await session.commitTransaction();
       return { status: true, msg: 'Room created', data: newRoom };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
     } finally {
-      // await session.endSession();
+      session.endSession();
     }
   }
 

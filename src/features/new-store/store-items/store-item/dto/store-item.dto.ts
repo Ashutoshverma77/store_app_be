@@ -8,12 +8,12 @@ import {
 } from 'class-validator';
 
 export class CreateItemDto {
-  @IsOptional() @IsString() itemName: string;
-  @IsOptional() @IsString() rackId: string;
-  @IsOptional() @IsString() scrapRackId: string;
+  @IsString() itemName: string; // Made non-optional, validation to be handled in service based on subCategoryIds
+  @IsOptional() @IsString() rackId?: string;
+  @IsOptional() @IsString() scrapRackId?: string;
 
   @IsOptional() @IsString() categoryId?: string;
-  @IsOptional() @IsArray() subCategoryIds?: [string];
+  @IsOptional() @IsArray() subCategoryIds?: string[];
 
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsString() description?: string;
@@ -28,7 +28,7 @@ export class UpdateItemDto {
   // @IsOptional() @IsString() itemNameId?: string;
   @IsOptional() @IsString() rackId?: string;
   @IsOptional() @IsString() categoryId?: string | null;
-  @IsOptional() @IsArray() categoryIds?: [string];
+  @IsOptional() @IsArray() categoryIds?: string[];
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsString() description?: string;
 

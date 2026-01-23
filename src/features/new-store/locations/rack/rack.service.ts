@@ -567,46 +567,59 @@ export class RacksService {
     const operatedBy = this.getOperatorId(dto);
     if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
 
+    const room = await this.rooms.findOne(dto.roomId);
+    if (room.isOneRack) {
+      throw new BadRequestException(
+        'Cannot create a rack in a room that is designated as a single-rack room.',
+      );
+    }
+
+    const session = await this.conn.startSession();
+    session.startTransaction();
     try {
-      let created: any;
+      const { code: rackCode } = await this.counterService.nextCode(
+        'rack',
+        'RK',
+      );
 
-      const room = await this.rooms.findOne(dto.roomId);
-      const rack = await this.model.find({ roomId: room._id, isActive: false });
-      const code = rack[0].code;
-      const idx = code.indexOf("-");
-      const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
-      const formet = this.counterService.format(prefix, rack.length + 1);
-      // const { code } = await this.counterService.nextCode('rack', 'RK');
-      // const name = dto.name?.trim() || formet;
+      const created = await this.model.create(
+        [
+          {
+            code: rackCode,
+            isScrap: room.isScrap,
+            remark: dto.remark ?? '',
+            roomId: dto.roomId,
+            roomName: room?.code ?? '',
+            createdBy: dto.createdBy ?? '',
+          },
+        ],
+        { session },
+      );
 
-      created = await this.model.create([
-        {
-          code: formet,
-          // name,
-          isScrap: room.isScrap,
-          remark: dto.remark ?? '',
-          roomId: dto.roomId,
-          roomName: room?.code ?? '',
-          createdBy: dto.createdBy ?? '',
-        },
-      ]);
+      const newRack = created[0];
 
-      created = created?.[0];
+      await this.trackModel.create(
+        [
+          {
+            operatedBy,
+            type: 'CREATE',
+            qty: 0,
+            refNo: newRack.code,
+            rackId: newRack._id,
+            note: `Rack created: ${newRack.code}`,
+          },
+        ],
+        { session },
+      );
 
-      await this.trackModel.create([
-        {
-          operatedBy,
-          type: 'CREATE',
-          qty: 0,
-          refNo: created?.code ?? '',
-          rackId: created?._id ?? null,
-          itemId: '',
-          note: `Rack created: ${created?.code ?? ''}`,
-        },
-      ]);
+      await session.commitTransaction();
 
-      return { status: true, msg: 'Rack created', data: created };
+      return { status: true, msg: 'Rack created', data: newRack };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
     } finally {
+      session.endSession();
     }
   }
 

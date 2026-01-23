@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Param, Post, Put } from '@nestjs/common';
+import { CreateRackRoomDto } from './dto/create-rack-room.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomsService } from './room.service';
@@ -20,7 +21,7 @@ export class RoomsController {
   }
 
   @Post('rackrooms')
-  async createRackroom(@Body() dto: any) {
+  async createRackroom(@Body() dto: CreateRackRoomDto) {
     var data = await this.service.createrackroom(dto);
 
     this.gateway.broadcastAllRoomList().catch(() => {});
