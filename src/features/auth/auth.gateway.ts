@@ -106,4 +106,18 @@ export class AuthGateway {
     client.emit('auth:findOne', authUserList);
     return;
   }
+
+  @SubscribeMessage('auth:findOneFetch')
+  async findOneFetch(client: any, payload: any) {
+    var authUserList = await this.auth.findOneUsers(payload.id);
+    client.emit('auth:findOneFetch', authUserList);
+    return;
+  }
+
+  @SubscribeMessage('division:findAll')
+  async findDivision(client: any, payload: any) {
+    var division = await this.auth.findDivision();
+    client.emit('division:findAll', division);
+    return;
+  }
 }

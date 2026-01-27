@@ -19,6 +19,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { AnyCaaRecord } from 'dns';
 import { v4 as uuid } from 'uuid';
 import { minioClient } from 'src/config/minio.config.js';
+import { CreateDivisionDto } from './dto/create-division.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -109,6 +110,23 @@ export class AuthService {
         //   // name: userByPhone.name,
         // },
         msg: 'An account with this phone number already exists.',
+        status: false,
+      };
+    }
+
+    if (registerDto.divisionIds.length === 0) {
+      // --- FIX 2: Use a more specific exception and message ---
+      return {
+        msg: 'Add the Division.',
+        status: false,
+      };
+    }
+
+    const existing = await this.users.checkDivision(registerDto.divisionIds);
+    if (!existing) {
+      // --- FIX 2: Use a more specific exception and message ---
+      return {
+        msg: 'invalid Division ID',
         status: false,
       };
     }
@@ -318,6 +336,7 @@ export class AuthService {
         isSuperAdmin: false,
         apps: [],
         appWorks: [],
+        divisionIds: [],
       });
     }
 
@@ -346,9 +365,19 @@ export class AuthService {
     return users;
   }
 
-  // async create(user: CreateAuthDto) {
-  //   return await this.users.createAdmin(user);
-  // }
+  async findDivision() {
+    var division = await this.users.findAllDivision();
+    return division;
+  }
+
+  async createdivision(user: CreateDivisionDto) {
+    var data = await this.users.createDivision(user);
+    return {
+      data: data,
+      msg: 'Division Created Successfully.....',
+      status: true,
+    };
+  }
 
   // async update(user: UpdateAuthDto) {
   //   return await this.users.update(user);

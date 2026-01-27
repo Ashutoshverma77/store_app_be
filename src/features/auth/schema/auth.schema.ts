@@ -1,17 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import mongoose, { Document } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
-
-// user.schema.ts
-@Schema({ _id: false })
-class AppAccessSchemaClass {
-  @Prop({ required: true })
-  app: string;
-
-  @Prop({ type: [String], default: [] })
-  access: string[];
-}
-const AppAccessSchema = SchemaFactory.createForClass(AppAccessSchemaClass);
+import { Division } from './division.schema';
 
 @Schema({ timestamps: true })
 export class User extends Document {
@@ -51,6 +41,12 @@ export class User extends Document {
   @Prop({ default: '' }) imageUrl: string;
 
   @Prop() signatureUrl: string;
+
+  @Prop({
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: Division.name }],
+    default: [],
+  })
+  divisionIds: mongoose.Types.ObjectId[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

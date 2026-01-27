@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from '../auth/schema/auth.schema.js';
@@ -8,12 +8,17 @@ import { UpdateAuthDto } from '../auth/dto/update-auth.dto.js';
 import { UpdateRegistorDto } from '../auth/dto/update-register.dto.js';
 import { ResetPasswordDto } from '../auth/dto/reset-password.dto.js';
 import bcrypt from 'bcryptjs';
+import { CreateDivisionDto } from '../auth/dto/create-division.dto.js';
+import { Division } from '../auth/schema/division.schema.js';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectModel(User.name, 'auth')
     private userSchema: Model<User>,
+
+    @InjectModel(Division.name, 'auth')
+    private readonly divisionModel: Model<Division>,
   ) {}
 
   async findByPhoneNo(phoneNumber: string) {
@@ -136,4 +141,41 @@ export class UserService {
   //   const doc: User = new this.userSchema(data);
   //   return doc;
   // }
+
+  async createDivision(dto: CreateDivisionDto) {
+    const divisionName = dto.divisionName.trim();
+
+    try {
+      const created = await this.divisionModel.create({
+        divisionName,
+        remark: dto.remark ?? '',
+      });
+      return created;
+    } catch (e: any) {
+      // Mongo duplicate key error
+      if (e?.code === 11000) {
+        throw new BadRequestException('division_already_exists');
+      }
+      throw e;
+    }
+  }
+
+  async findAllDivision() {
+    return this.divisionModel
+      .find({ isActive: true })
+      .sort({ divisionName: 1 })
+      .lean();
+  }
+
+  async checkDivision(divisions: any) {
+    const existing = await this.divisionModel.countDocuments({
+      _id: { $in: divisions },
+    });
+
+    if (existing !== divisions.length) {
+      return false;
+    }
+
+    return true;
+  }
 }

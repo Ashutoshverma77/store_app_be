@@ -24,10 +24,9 @@ export class RegisterDto {
   @IsNotEmpty()
   isSuperAdmin: boolean;
 
- 
   apps: string[];
-  
 
   appWorks: string[];
 
+  divisionIds: string[];
 }

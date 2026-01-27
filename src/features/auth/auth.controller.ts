@@ -20,6 +20,7 @@ import { AuthGateway } from './auth.gateway.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { UploadBase64Dto } from '../store-item/schema/upload-image.dto.js';
 import { StoreItemService } from '../store-item/store-item.service.js';
+import { CreateDivisionDto } from './dto/create-division.dto.js';
 
 @Controller('/api/auth')
 export class AuthController {
@@ -48,6 +49,7 @@ export class AuthController {
 
   @Put('createuser/:id')
   async updateregister(@Body() dto: UpdateRegistorDto) {
+    console.log(dto);
     const res = await this.auth.updateregister(dto);
     this.gateway.broadcastAuthList().catch(() => {});
     return res;
@@ -114,4 +116,9 @@ export class AuthController {
   // async update(@Body() dto: UpdateAuthDto) {
   //   return this.auth.update(dto);
   // }
+
+  @Post('divisions')
+  async createdivision(@Body() dto: CreateDivisionDto) {
+    return await this.auth.createdivision(dto);
+  }
 }

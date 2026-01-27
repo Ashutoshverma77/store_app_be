@@ -24,7 +24,10 @@ import {
   ItemRackQty,
   ItemRackQtySchema,
 } from '../../locations/rack/entities/item-rack-qty.schema';
-import { StoreUnitName, StoreUnitNameSchema } from '../store-unit-name/entities/store-unit-name.schema';
+import {
+  StoreUnitName,
+  StoreUnitNameSchema,
+} from '../store-unit-name/entities/store-unit-name.schema';
 
 @Module({
   imports: [

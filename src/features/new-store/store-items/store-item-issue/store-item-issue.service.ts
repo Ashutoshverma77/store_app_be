@@ -17,6 +17,7 @@ import {
   ItemRackQty,
   ItemRackQtyDocument,
 } from '../../locations/rack/entities/item-rack-qty.schema';
+import { UserService } from 'src/features/user/user.service';
 
 // ✅ Adjust these imports/paths to your project
 // If you have class-based schema:
@@ -51,6 +52,8 @@ export class IssueService {
 
     @InjectModel(ItemRackQty.name, 'store')
     private readonly itemRackQtyModel: Model<ItemRackQtyDocument>,
+
+    private readonly userService: UserService,
   ) {}
 
   private n(v: any, fb = 0) {
@@ -585,6 +588,7 @@ export class IssueService {
     if (!Types.ObjectId.isValid(approvedBy)) {
       throw new BadRequestException('approvedBy invalid');
     }
+
     if (!Types.ObjectId.isValid(itemId)) {
       throw new BadRequestException('itemId invalid');
     }
@@ -593,6 +597,24 @@ export class IssueService {
     if (!issue) throw new BadRequestException('Issue not found');
     // if (String(issue.status).toUpperCase() !== 'DRAFT')
     //   throw new BadRequestException('Only DRAFT can be approved');
+
+    const approveUser = await this.userService.findById(approvedBy);
+    const createUser = await this.userService.findById(issue.createdBy);
+
+    const a = (approveUser?.divisionIds ?? [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean);
+
+    const b = (createUser?.divisionIds ?? [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean);
+
+    const setA = new Set<string>(a);
+
+    const hasCommonDivision = b.some((id) => setA.has(id)); // ✅ true if any match
+
+    if (hasCommonDivision) throw new BadRequestException('Senior not found');
+
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
 

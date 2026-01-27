@@ -704,7 +704,7 @@ export class StoreNewItemService {
 
       const rack = await this.rackModel.findById(this.oid(rackId));
       // .session(session);
-      if (!rack) throw new BadRequestException('Item not found');
+      if (!rack) throw new BadRequestException('rack not found');
 
       // 1) update stock
       await this.model.updateOne(

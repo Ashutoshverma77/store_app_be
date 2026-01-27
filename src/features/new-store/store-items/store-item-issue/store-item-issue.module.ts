@@ -26,6 +26,7 @@ import {
   ItemRackQtySchema,
 } from '../../locations/rack/entities/item-rack-qty.schema';
 import { StoreNewItemModule } from '../store-item/store-item.module';
+import { UserModule } from 'src/features/user/user.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { StoreNewItemModule } from '../store-item/store-item.module';
       ],
       'store',
     ),
+    UserModule,
     StoreNewItemModule,
   ],
   controllers: [IssueController],

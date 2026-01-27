@@ -19,11 +19,15 @@ export class UpdateRegistorDto {
   @IsNotEmpty()
   isSuperAdmin: boolean;
 
- @IsArray()
+  @IsArray()
   @IsNotEmpty()
   apps: string[];
-  
+
   @IsArray()
   @IsNotEmpty()
   appWorks: string[];
+
+  @IsArray()
+  @IsNotEmpty()
+  divisionIds: string[];
 }
