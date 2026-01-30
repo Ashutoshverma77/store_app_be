@@ -1578,8 +1578,16 @@ export class IssueService {
 
     return true;
   }
+  escapeRegex(input: string) {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  async findIssuesByLineItemId(dto: any) {
+    const itemId = String(dto?.itemId ?? '').trim();
+    if (!itemId) return [];
 
-  async findIssuesByLineItemId(itemId: string) {
+    const search = String(dto?.search ?? '').trim();
+    const createdBy = String(dto?.createdBy ?? '').trim();
+
     // Prepare the query to handle different storage formats of itemId
     const or: any[] = [
       { 'lines.itemId': itemId }, // if stored as string
@@ -1591,8 +1599,22 @@ export class IssueService {
       or.unshift({ 'lines.itemId': new Types.ObjectId(itemId) }); // if stored as ObjectId
     }
 
+    // ✅ build filter
+    const filter: any = { $or: or };
+
+    // ✅ createdBy is STRING in schema => direct match only
+    if (createdBy) {
+      filter.createdBy = createdBy;
+    }
+
+    // ✅ search ONLY by issNo
+    if (search) {
+      const re = new RegExp(this.escapeRegex(search), 'i');
+      filter.issNo = re;
+    }
+
     // Fetch issues from the database
-    const issues = await this.issueModel.find({ $or: or }).lean();
+    const issues = await this.issueModel.find(filter).lean();
 
     const filteredIssues = issues
       .map((issue) => {
@@ -1666,12 +1688,18 @@ export class IssueService {
     const skip = (page - 1) * limit;
 
     const search = String(dto?.search || '').trim();
+    const createdByRaw = String(dto?.createdBy || '').trim();
     const status = String(dto?.status || '')
       .trim()
       .toUpperCase();
 
     const filter: any = {};
     if (status && status !== 'ALL') filter.status = status;
+
+    if (createdByRaw) {
+      // fallback if your schema stores createdBy as string
+      filter.createdBy = createdByRaw;
+    }
 
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

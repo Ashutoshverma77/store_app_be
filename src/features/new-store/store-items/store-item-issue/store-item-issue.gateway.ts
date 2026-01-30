@@ -27,8 +27,8 @@ export class IssueGateway {
     @MessageBody() body: any,
   ) {
     // console.log(body);
-    const itemId = String(body?.issueId || '').trim();
-    const data = await this.s.findIssuesByLineItemId(itemId);
+    // const itemId = String(body?.issueId || '').trim();
+    const data = await this.s.findIssuesByLineItemId(body);
 
     // console.log(data);
 

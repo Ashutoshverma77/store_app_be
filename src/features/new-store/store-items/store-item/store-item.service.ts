@@ -361,12 +361,13 @@ export class StoreNewItemService {
         parentId: parentIdsForNewCategory,
         createdBy: dto.createdBy ?? '',
         isbag:
-          categoryParent.parentId.length < 1 && categoryParent.isbag === true,
+          // categoryParent.parentId.length < 1 &&
+          categoryParent.isbag === true,
         isMachine:
-          categoryParent.parentId.length < 1 &&
+          // categoryParent.parentId.length < 1 &&
           categoryParent.isMachine === true,
         isNormalItem:
-          categoryParent.parentId.length < 1 &&
+          // categoryParent.parentId.length < 1 &&
           categoryParent.isNormalItem === true,
       },
     ]);

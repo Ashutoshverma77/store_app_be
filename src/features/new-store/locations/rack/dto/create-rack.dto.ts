@@ -13,7 +13,7 @@ export class CreateRackDto {
   remark?: string;
 
   @IsOptional()
-  @IsString()
+  // @IsString()
   isScrap?: boolean;
 
   @IsOptional()
