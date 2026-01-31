@@ -27,7 +27,7 @@ export class StoreNewItemController {
 
   @Post()
   async create(@Body() dto: CreateItemDto) {
-    console.log(dto);
+    // console.log(dto);
 
     // return;
     const data = await this.s.create(dto);
@@ -41,7 +41,7 @@ export class StoreNewItemController {
     @Param('id') id: string,
     @Body() dto: Omit<UpdateItemDto, 'id'>,
   ) {
-    console.log(dto);
+    // console.log(dto);
 
     // return;
     const data = await this.s.update({ ...dto, id });

@@ -49,7 +49,7 @@ export class AuthController {
 
   @Put('createuser/:id')
   async updateregister(@Body() dto: UpdateRegistorDto) {
-    console.log(dto);
+    // console.log(dto);
     const res = await this.auth.updateregister(dto);
     this.gateway.broadcastAuthList().catch(() => {});
     return res;

@@ -20,7 +20,7 @@ export class IssueController {
 
   @Post('draft')
   async createDraft(@Body() dto: any) {
-    console.log(dto);
+    // console.log(dto);
 
     // return;
     const issue = await this.s.createDraftBulk(dto);
@@ -45,6 +45,10 @@ export class IssueController {
     @Param('itemId') itemId: string,
     @Body() dto: any,
   ) {
+    // console.log(id);
+    // console.log(itemId);
+    // console.log(dto);
+
     const out = await this.s.approveIssueLine(id, itemId, dto);
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});

@@ -93,7 +93,7 @@ export class ItemIssueGateway {
   async findListByItem(client: any, payload: any) {
     var authUserList = await this.issueService.findListByItem(payload.itemId);
 
-    console.log(authUserList);
+    // console.log(authUserList);
     client.emit('issue:listByItem', authUserList);
     return;
   }

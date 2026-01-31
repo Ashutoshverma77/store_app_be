@@ -609,11 +609,14 @@ export class IssueService {
       .map((x) => String(x).trim().toLowerCase())
       .filter(Boolean);
 
+    // console.log(a);
+    // console.log(b);
+
     const setA = new Set<string>(a);
 
     const hasCommonDivision = b.some((id) => setA.has(id)); // ✅ true if any match
 
-    if (hasCommonDivision) throw new BadRequestException('Senior not found');
+    if (!hasCommonDivision) throw new BadRequestException('Senior not found');
 
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
@@ -853,6 +856,23 @@ export class IssueService {
     const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
     if (!storeRack) throw new BadRequestException('Store rack not found');
 
+    const approveUser = await this.userService.findById(issuedBy);
+    const createUser = await this.userService.findById(issue.createdBy);
+
+    const a = (approveUser?.divisionIds ?? [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean);
+
+    const b = (createUser?.divisionIds ?? [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean);
+
+    const setA = new Set<string>(a);
+
+    const hasCommonDivision = b.some((id) => setA.has(id)); // ✅ true if any match
+
+    if (!hasCommonDivision) throw new BadRequestException('Senior not found');
+
     const avail = Number((storeItem as any).stockAvailableQuantity || 0);
     if (avail < qty)
       throw new BadRequestException(`Insufficient stock. Available: ${avail}`);
@@ -1068,7 +1088,7 @@ export class IssueService {
   /* ---------------- RETURN LINE (good + scrap) ---------------- */
 
   async returnLine(issueId: string, dto: any) {
-    console.log(dto);
+    // console.log(dto);
 
     const returnedBy = String(dto.returnedBy || '').trim();
     const itemId = String(dto.itemId || '').trim();
@@ -1096,6 +1116,23 @@ export class IssueService {
 
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
+
+    const approveUser = await this.userService.findById(returnedBy);
+    const createUser = await this.userService.findById(issue.createdBy);
+
+    const a = (approveUser?.divisionIds ?? [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean);
+
+    const b = (createUser?.divisionIds ?? [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean);
+
+    const setA = new Set<string>(a);
+
+    const hasCommonDivision = b.some((id) => setA.has(id)); // ✅ true if any match
+
+    if (!hasCommonDivision) throw new BadRequestException('Senior not found');
     // const st = String(issue.status || '')
     //   .trim()
     //   .toUpperCase();

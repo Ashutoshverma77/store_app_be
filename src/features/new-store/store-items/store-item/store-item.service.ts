@@ -894,7 +894,7 @@ export class StoreNewItemService {
   }
 
   async findAllReceive() {
-    console.log('data');
+    // console.log('data');
     var receiveData: any = [];
     var data = await this.receiveModel.find().lean();
 
@@ -1301,7 +1301,7 @@ export class StoreNewItemService {
     const racks = await this.rackModel
       .find({ itemId: itemId, _id: { $ne: this.oid(rackId) }, isActive: false })
       .lean();
-    console.log(racks);
+    // console.log(racks);
     return racks;
   }
 
@@ -1589,7 +1589,7 @@ export class StoreNewItemService {
 
   async scrapByItemId(itemId: string) {
     const itemsCheck = await this.model.findById(itemId).lean();
-    console.log(itemsCheck);
+    // console.log(itemsCheck);
 
     // Step 1: Fetch items with isScrap flag true
     const items = await this.model
@@ -1599,12 +1599,12 @@ export class StoreNewItemService {
         isScrap: true,
       })
       .lean();
-    console.log(items);
+    // console.log(items);
 
     // Step 2: Get the array of item IDs
     const itemIds = items.map((item) => item._id.toString()); // More efficient than using a loop
 
-    console.log(itemIds);
+    // console.log(itemIds);
 
     var rack = await this.rackModel
       .find({
@@ -1614,7 +1614,7 @@ export class StoreNewItemService {
       })
       .lean();
 
-    console.log(rack);
+    // console.log(rack);
 
     var rackWithStock: any = [];
     for (var rk of rack) {
@@ -1639,7 +1639,7 @@ export class StoreNewItemService {
       });
     }
 
-    console.log(rackWithStock);
+    // console.log(rackWithStock);
     // Step 3: Find racks based on the item IDs and roomId
     return rackWithStock;
   }
