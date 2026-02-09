@@ -19,7 +19,7 @@ export type StockTrackDocument = HydratedDocument<StockTrack>;
 @Schema({ timestamps: true, versionKey: false })
 export class StockTrack {
   @Prop({ default: '' })
-  itemId: string;
+  itemId?: string;
 
   @Prop({ default: '' })
   categoryId?: string;
@@ -49,20 +49,20 @@ export class StockTrack {
     ],
     index: true,
   })
-  type: StockTrackType;
+  type?: StockTrackType;
 
   // + for receive/return/adjust up, - for issue/scrap/adjust down, 0 for workflow events
   @Prop({ required: true })
-  qty: number;
+  qty?: number;
 
   @Prop({ default: '' })
-  refNo: string;
+  refNo?: string;
 
   @Prop({ default: '' })
-  operatedBy: string;
+  operatedBy?: string;
 
   @Prop({ default: '' })
-  note: string;
+  note?: string;
 }
 
 export const StockTrackSchema = SchemaFactory.createForClass(StockTrack);

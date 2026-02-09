@@ -8,14 +8,15 @@ import {
 } from 'class-validator';
 
 export class CreateItemDto {
-  @IsOptional() @IsString() itemName: string;
-  @IsOptional() @IsString() rackId: string;
-  @IsOptional() @IsString() scrapRackId: string;
+  @IsOptional() @IsString() itemName?: string;
+  @IsOptional() @IsString() rackId?: string;
+  @IsOptional() @IsString() scrapRackId?: string;
 
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsArray() subCategoryIds?: [string];
 
   @IsOptional() @IsString() unit?: string;
+  @IsOptional() @IsString() maxCapacity?: string;
   @IsOptional() @IsString() description?: string;
 
   @IsOptional() @IsString() imageUrl?: string;
@@ -23,7 +24,7 @@ export class CreateItemDto {
 }
 
 export class UpdateItemDto {
-  @IsString() id: string;
+  @IsString() id?: string;
 
   // @IsOptional() @IsString() itemNameId?: string;
   @IsOptional() @IsString() rackId?: string;
@@ -55,21 +56,21 @@ export class ReceivePagedQueryDto {
 
 export class TransferRackDto {
   @IsMongoId()
-  toRackId: string;
+  toRackId?: string;
 
-  createdBy: string;
+  createdBy?: string;
 }
 
 export class TransferItemDto {
   @IsMongoId()
-  fromRackId: string;
+  fromRackId?: string;
 
   @IsMongoId()
-  toRackId: string;
+  toRackId?: string;
 
   @IsInt()
   @Min(1)
-  qty: number;
+  qty?: number;
 
-  createdBy: string;
+  createdBy?: string;
 }

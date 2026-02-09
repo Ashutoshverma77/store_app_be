@@ -27,6 +27,7 @@ import {
 } from '../../locations/rack/entities/item-rack-qty.schema';
 import { StoreNewItemModule } from '../store-item/store-item.module';
 import { UserModule } from 'src/features/user/user.module';
+import { Bag, BagSchema } from 'src/features/bags/entities/bag.schema';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { UserModule } from 'src/features/user/user.module';
         { name: ItemIssue.name, schema: ItemIssueSchema },
         { name: StockTrack.name, schema: StockTrackSchema },
         { name: ItemRackQty.name, schema: ItemRackQtySchema },
+        { name: Bag.name, schema: BagSchema },
       ],
       'store',
     ),

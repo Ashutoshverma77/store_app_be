@@ -234,7 +234,7 @@ export class StoreScrapService {
         operatedBy: String(operatedBy),
         itemId: String(item._id),
         categoryId: item.categoryId ?? '',
-        rackId: item.rackId[0] ?? '',
+        rackId: item.rackId![0] ?? '',
         receivingId: String(receivingDoc?._id) ?? '',
         refNo: receivingDoc ? String(receivingDoc._id) : '',
         note: `Receive: +${qty}`,

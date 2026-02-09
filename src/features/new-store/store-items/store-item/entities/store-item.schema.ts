@@ -4,64 +4,67 @@ import mongoose, { Document } from 'mongoose';
 @Schema({ timestamps: true })
 export class StoreNewItem extends Document {
   @Prop({ default: '' })
-  itemCode: string;
+  itemCode?: string;
 
   // Field 1: ItemName
   // @Prop({ default: '' })
   // itemNameId: string;
 
   @Prop({ default: '' })
-  itemName: string;
+  itemName?: string;
 
   // @Prop({ default: '' })
   // itemNameCode: string;
 
   // Field 2: Rack
   @Prop({ default: [] })
-  rackId: [string];
+  rackId?: string[];
 
   // Field 3: Category/Subcategory (same collection; may point to category or subcategory)
   @Prop({ default: '' })
   categoryId?: string;
 
   @Prop({ default: '' })
-  categoryLabel: string; // "Category > Subcategory" or "Category"
+  categoryLabel?: string; // "Category > Subcategory" or "Category"
 
   // Field 4:
   @Prop({ default: '' })
-  unit: string;
+  unit?: string;
 
   @Prop({ default: '' })
-  unitId: string;
+  unitId?: string;
 
   // Field 5:
   @Prop({ default: '' })
-  description: string;
+  description?: string;
 
-  @Prop({ default: false })
-  isScrap: boolean;
+  @Prop({ default: 0 })
+  isScrap?: boolean;
+
+  @Prop({ default: 0 })
+  maxCapacity?: number;
 
   // Extra fields
   @Prop({ type: Number, required: true, min: 0, default: 0 })
-  totalStockQuantity: number;
+  totalStockQuantity?: number;
 
   @Prop({ type: Number, required: true, min: 0, default: 0 })
-  stockAvailableQuantity: number;
+  stockAvailableQuantity?: number;
 
   @Prop({ type: Number, required: true, min: 0, default: 0 })
-  stockIssueQuantity: number;
+  stockIssueQuantity?: number;
 
   @Prop({ type: Number, required: true, min: 0, default: 0 })
-  stockissueCompleted: number;
+  stockissueCompleted?: number;
 
   @Prop({ type: Number, required: true, min: 0, default: 0 })
-  stockscrapQuantity: number;
+  stockscrapQuantity?: number;
 
   @Prop({ default: '' })
-  imageUrl: string;
+  imageUrl?: string;
 
   @Prop({ default: '' })
-  createdBy: string;
+  createdBy?: string;
 }
 
 export const StoreNewItemSchema = SchemaFactory.createForClass(StoreNewItem);

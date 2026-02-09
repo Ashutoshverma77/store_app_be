@@ -63,7 +63,7 @@ export class StoreNewItemController {
     @Param('id') itemId: string,
     @Body() dto: TransferRackDto,
   ) {
-    await this.s.removeRackFromItem(itemId, dto.toRackId, dto.createdBy);
+    await this.s.removeRackFromItem(itemId, dto.toRackId!, dto.createdBy);
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});
     return { ok: true };
@@ -84,9 +84,9 @@ export class StoreNewItemController {
   ) {
     await this.s.transferItemQty(
       itemId,
-      dto.fromRackId,
-      dto.toRackId,
-      dto.qty,
+      dto.fromRackId!,
+      dto.toRackId!,
+      dto.qty!,
       dto.createdBy,
     );
     this.gateway.broadcastAllList().catch(() => {});

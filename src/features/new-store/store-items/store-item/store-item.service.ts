@@ -407,6 +407,7 @@ export class StoreNewItemService {
 
         unit: unitName.name ?? '',
         unitId: unitName._id ?? '',
+        maxCapacity: dto.maxCapacity ?? 0,
         description: dto.description ?? '',
 
         totalStockQuantity: 0,
@@ -462,6 +463,7 @@ export class StoreNewItemService {
 
         unit: unitName.name ?? '',
         unitId: unitName._id ?? '',
+        maxCapacity: dto.maxCapacity ?? 0,
         description: dto.description ?? '',
 
         totalStockQuantity: 0,
@@ -561,7 +563,7 @@ export class StoreNewItemService {
       // if (dto.description != null) patch.description = dto.description;
       // if (dto.imageUrl != null) patch.imageUrl = dto.imageUrl;
 
-      const prev = await this.model.findById(this.oid(dto.id));
+      const prev = await this.model.findById(this.oid(dto.id!));
       // .session(session);
       if (!prev) throw new BadRequestException('Item not found');
 
@@ -657,7 +659,7 @@ export class StoreNewItemService {
           operatedBy: String(operatedBy),
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
-          rackId: item.rackId[0] ?? '',
+          rackId: item.rackId![0] ?? '',
           refNo: String((item as any).itemNameCode ?? ''),
           note: `Item deleted: ${String((item as any).itemName ?? '')} (${String(
             (item as any).itemNameCode ?? '',
@@ -759,7 +761,7 @@ export class StoreNewItemService {
         operatedBy: String(operatedBy),
         itemId: String(item._id),
         categoryId: item.categoryId ?? '',
-        rackId: item.rackId[0] ?? '',
+        rackId: item.rackId![0] ?? '',
         receivingId: String(receivingDoc?._id) ?? '',
         refNo: receivingDoc ? String(receivingDoc._id) : '',
         note: `Receive: +${qty}`,
@@ -861,9 +863,9 @@ export class StoreNewItemService {
       .lean();
 
     for (var rec of data) {
-      var user = await this.userService.findById(rec.receivedBy);
-      var item = await this.model.findById(rec.lines[0].itemId);
-      var rack = await this.rackModel.findById(rec.lines[0].rackId);
+      var user = await this.userService.findById(rec.receivedBy!);
+      var item = await this.model.findById(rec.lines![0].itemId);
+      var rack = await this.rackModel.findById(rec.lines![0].rackId);
       receiveData.push({
         receivedBy: user?.name,
         itemId: item?.id,
@@ -871,7 +873,7 @@ export class StoreNewItemService {
         itemName: item?.itemName,
         rackId: rack?.id,
         rackCode: rack?.code,
-        qty: rec.lines[0].qty,
+        qty: rec.lines![0].qty,
         remark: rec?.remark,
         createdAt: rec.createdAt,
       });
@@ -899,9 +901,9 @@ export class StoreNewItemService {
     var data = await this.receiveModel.find().lean();
 
     for (var rec of data) {
-      var user = await this.userService.findById(rec.receivedBy);
-      var item = await this.model.findById(rec.lines[0].itemId);
-      var rack = await this.rackModel.findById(rec.lines[0].rackId);
+      var user = await this.userService.findById(rec.receivedBy!);
+      var item = await this.model.findById(rec.lines![0].itemId);
+      var rack = await this.rackModel.findById(rec.lines![0].rackId);
       receiveData.push({
         receivedBy: user?.name,
         itemId: item?.id,
@@ -910,7 +912,7 @@ export class StoreNewItemService {
         rackId: rack?.id,
         roomName: rack?.roomName,
         rackCode: rack?.code,
-        qty: rec.lines[0].qty,
+        qty: rec.lines![0].qty,
         remark: rec?.remark,
         createdAt: rec.createdAt,
       });
@@ -1203,7 +1205,7 @@ export class StoreNewItemService {
           operatedBy: String(op),
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
-          rackId: item.rackId[0] ?? '',
+          rackId: item.rackId![0] ?? '',
           refNo: String(item.itemName ?? ''),
           note: `Transfer out: -${qty} to rack ${toRackId}`,
         });

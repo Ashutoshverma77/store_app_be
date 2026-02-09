@@ -18,6 +18,7 @@ import {
   ItemRackQtyDocument,
 } from '../../locations/rack/entities/item-rack-qty.schema';
 import { UserService } from 'src/features/user/user.service';
+import { Bag, BagDocument } from 'src/features/bags/entities/bag.schema';
 
 // ✅ Adjust these imports/paths to your project
 // If you have class-based schema:
@@ -52,6 +53,9 @@ export class IssueService {
 
     @InjectModel(ItemRackQty.name, 'store')
     private readonly itemRackQtyModel: Model<ItemRackQtyDocument>,
+
+    @InjectModel(Bag.name, 'store')
+    private readonly bagModel: Model<BagDocument>,
 
     private readonly userService: UserService,
   ) {}
@@ -956,6 +960,34 @@ export class IssueService {
     issue.markModified('allocations');
     await issue.save();
 
+    if (storeItem.maxCapacity! > 0) {
+      const bagCount = Math.ceil(qty / storeItem.maxCapacity!);
+      const counter = await this.bagModel.find({
+        parentItemId: storeItem._id!.toString(),
+      });
+
+      const endNo = counter.length;
+      const startNo = counter.length + qty;
+      // const startNo = endNo - bagCount + 1;
+
+      for (let n = endNo; n < startNo; n++) {
+        const payload: any = {
+          parentItemId: storeItem._id!.toString(),
+          itemId: '', // your Bag schema uses string
+          itemName: '',
+          // bagNo: n,
+          bagCode: this.formatBagCode(n + 1, storeItem.itemName!), // unique
+          itemStock: 0,
+          itemUsed: 0,
+          approvedStatus: 'approved', // change to 'pending' if your workflow needs approval
+          transferType: 'inStock',
+          transferQty: 0,
+          maxQty: storeItem.maxCapacity!,
+        };
+
+        await this.bagModel.create(payload);
+      }
+    }
     // ✅ Track ISSUE (recommended signed negative)
     await this.track({
       rackId: dto.rackId,
@@ -980,6 +1012,11 @@ export class IssueService {
       },
       // status: issue.status,
     };
+  }
+
+  private formatBagCode(bagNo: number, itemName: string) {
+    // change format if you want
+    return `${itemName}-${String(bagNo).padStart(6, '0')}`;
   }
 
   /* ---------------- ISSUE BULK ---------------- */

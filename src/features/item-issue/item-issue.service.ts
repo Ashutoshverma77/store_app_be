@@ -1652,7 +1652,7 @@ export class IssueService {
           await this.movModel.insertMany(movements);
         }
       } catch (e) {
-        this.logger.error(`closeIssue tx failed: ${e?.message || e}`);
+        this.logger.error(`closeIssue tx failed: ${e!.message || e}`);
         return { msg: 'Issue Item Failed.......', status: false };
       }
 

@@ -68,7 +68,7 @@ export class BagsService {
       itemUsed: 0,
       approvedStatus: 'pending',
       transferQty: 0,
-      transferType: 'inStock',
+      transferType: 'inStock',                 
       itemId: '',
       itemName: '',
     };
