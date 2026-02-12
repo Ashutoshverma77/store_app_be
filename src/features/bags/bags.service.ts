@@ -24,7 +24,7 @@ export class BagsService {
     @InjectModel(Item.name, 'store')
     private readonly itemModel: Model<Item>,
 
-    private readonly activity: ActivityLogsService,
+    // private readonly activity: ActivityLogsService,
   ) {}
 
   // helper: safe snapshots (avoid huge doc fields)
@@ -68,7 +68,7 @@ export class BagsService {
       itemUsed: 0,
       approvedStatus: 'pending',
       transferQty: 0,
-      transferType: 'inStock',                 
+      transferType: 'inStock',
       itemId: '',
       itemName: '',
     };
@@ -77,19 +77,19 @@ export class BagsService {
 
     // ✅ DO NOT touch item openingStock because no item is linked + stock is 0
 
-    await this.activity.log({
-      module: 'bags',
-      action: 'create',
-      eventKey: 'bags.create',
-      actor: dto.createdBy ? { userId: dto.createdBy } : actor,
-      entities: [{ type: 'Bag', id: bag._id!.toString(), label: bag.bagCode }],
-      changes: {
-        before: {},
-        after: { bag: this.bagSnap(bag) },
-        delta: { itemOpeningStock: 0, bagStock: 0 },
-      },
-      meta: { dto: { bagCode: dto.bagCode, maxQty } },
-    });
+    // await this.activity.log({
+    //   module: 'bags',
+    //   action: 'create',
+    //   eventKey: 'bags.create',
+    //   actor: dto.createdBy ? { userId: dto.createdBy } : actor,
+    //   entities: [{ type: 'Bag', id: bag._id!.toString(), label: bag.bagCode }],
+    //   changes: {
+    //     before: {},
+    //     after: { bag: this.bagSnap(bag) },
+    //     delta: { itemOpeningStock: 0, bagStock: 0 },
+    //   },
+    //   meta: { dto: { bagCode: dto.bagCode, maxQty } },
+    // });
 
     return { status: true, msg: 'Bag created', data: bag };
   }
@@ -168,24 +168,24 @@ export class BagsService {
       }
     }
 
-    await this.activity.log({
-      module: 'bags',
-      action: 'update',
-      eventKey: 'bags.update',
-      actor: (dto as any).createdBy
-        ? { userId: (dto as any).createdBy }
-        : actor,
-      entities: [{ type: 'Bag', id: String(id), label: updated.bagCode }],
-      changes: {
-        before: { bag: oldSnap, item: itemBeforeSnap },
-        after: { bag: this.bagSnap(updated), item: itemAfterSnap },
-        delta: {
-          bagStock: newStock - oldStock,
-          itemIdChanged: isItemChanging,
-        },
-      },
-      meta: { dto },
-    });
+    // await this.activity.log({
+    //   module: 'bags',
+    //   action: 'update',
+    //   eventKey: 'bags.update',
+    //   actor: (dto as any).createdBy
+    //     ? { userId: (dto as any).createdBy }
+    //     : actor,
+    //   entities: [{ type: 'Bag', id: String(id), label: updated.bagCode }],
+    //   changes: {
+    //     before: { bag: oldSnap, item: itemBeforeSnap },
+    //     after: { bag: this.bagSnap(updated), item: itemAfterSnap },
+    //     delta: {
+    //       bagStock: newStock - oldStock,
+    //       itemIdChanged: isItemChanging,
+    //     },
+    //   },
+    //   meta: { dto },
+    // });
 
     return { status: true, msg: 'Bag updated', data: updated };
   }
@@ -241,22 +241,22 @@ export class BagsService {
     const bagAfter = await this.bagModel.findById(id).lean();
     const itemAfter = await this.itemModel.findById(itemId).lean();
 
-    await this.activity.log({
-      module: 'bags',
-      action: 'add_stock',
-      eventKey: 'bags.add_stock',
-      actor: dto.createdBy ? { userId: dto.createdBy } : actor,
-      entities: [
-        { type: 'Bag', id: String(id), label: bag.bagCode },
-        { type: 'Item', id: itemId, label: itemAfter?.name ?? '' },
-      ],
-      changes: {
-        before: { bag: bagBefore, item: this.itemSnap(itemBefore) },
-        after: { bag: this.bagSnap(bagAfter), item: this.itemSnap(itemAfter) },
-        delta: { qtyAdded: qty, bagStock: qty, itemOpeningStock: qty },
-      },
-      meta: { dto },
-    });
+    // await this.activity.log({
+    //   module: 'bags',
+    //   action: 'add_stock',
+    //   eventKey: 'bags.add_stock',
+    //   actor: dto.createdBy ? { userId: dto.createdBy } : actor,
+    //   entities: [
+    //     { type: 'Bag', id: String(id), label: bag.bagCode },
+    //     { type: 'Item', id: itemId, label: itemAfter?.name ?? '' },
+    //   ],
+    //   changes: {
+    //     before: { bag: bagBefore, item: this.itemSnap(itemBefore) },
+    //     after: { bag: this.bagSnap(bagAfter), item: this.itemSnap(itemAfter) },
+    //     delta: { qtyAdded: qty, bagStock: qty, itemOpeningStock: qty },
+    //   },
+    //   meta: { dto },
+    // });
 
     return { status: true, msg: 'Stock added', data: bagAfter };
   }
@@ -278,30 +278,33 @@ export class BagsService {
 
     const itemAfter = await this.itemModel.findById(old.itemId).lean();
 
-    await this.activity.log({
-      module: 'bags',
-      action: 'delete',
-      eventKey: 'bags.delete',
-      actor: createdBy
-        ? { userId: createdBy } // ✅ from Flutter uid
-        : actor,
-      entities: [
-        { type: 'Bag', id: String(id), label: old.bagCode },
-        { type: 'Item', id: String(old.itemId), label: itemAfter?.name ?? '' },
-      ],
-      changes: {
-        before: { bag: oldSnap, item: this.itemSnap(itemBefore) },
-        after: { bag: null, item: this.itemSnap(itemAfter) },
-        delta: { itemOpeningStock: dec },
-      },
-      meta: {},
-    });
+    // await this.activity.log({
+    //   module: 'bags',
+    //   action: 'delete',
+    //   eventKey: 'bags.delete',
+    //   actor: createdBy
+    //     ? { userId: createdBy } // ✅ from Flutter uid
+    //     : actor,
+    //   entities: [
+    //     { type: 'Bag', id: String(id), label: old.bagCode },
+    //     { type: 'Item', id: String(old.itemId), label: itemAfter?.name ?? '' },
+    //   ],
+    //   changes: {
+    //     before: { bag: oldSnap, item: this.itemSnap(itemBefore) },
+    //     after: { bag: null, item: this.itemSnap(itemAfter) },
+    //     delta: { itemOpeningStock: dec },
+    //   },
+    //   meta: {},
+    // });
 
     return { status: true, msg: 'Bag deleted' };
   }
 
   async findAll() {
-    const bags = await this.bagModel.find().sort({ createdAt: -1 }).lean();
+    const bags = await this.bagModel
+      .find({ approvedStatus: { $in: ['pending', 'approved'] } })
+      .sort({ createdAt: -1 })
+      .lean();
     return bags;
   }
 
@@ -385,52 +388,52 @@ export class BagsService {
       this.bagModel.findById(targetId).lean(),
     ]);
 
-    await this.activity.log({
-      module: 'bags',
-      action: 'transfer',
-      eventKey: 'bags.transfer.other_bag',
-      actor: dto.createdBy
-        ? { userId: dto.createdBy } // ✅ from Flutter uid
-        : actor,
-      entities: [
-        {
-          type: 'Bag',
-          id: String(dto.sourceBagId),
-          label: sourceBefore.bagCode,
-        },
-        {
-          type: 'Bag',
-          id: String(dto.targetBagId),
-          label: targetBefore.bagCode,
-        },
-        {
-          type: 'Item',
-          id: String(sourceBefore.itemId),
-          label: sourceBefore.itemName ?? '',
-        },
-      ],
-      changes: {
-        before: {
-          source: this.bagSnap(sourceBefore),
-          target: this.bagSnap(targetBefore),
-        },
-        after: {
-          source: this.bagSnap(sourceAfter),
-          target: this.bagSnap(targetAfter),
-        },
-        delta: {
-          qty,
-          source: { itemStock: -qty, itemUsed: +qty, transferQty: +qty },
-          target: { itemStock: +qty },
-        },
-      },
-      meta: {
-        sourceBagId: dto.sourceBagId,
-        targetBagId: dto.targetBagId,
-        qty,
-        maxQty,
-      },
-    });
+    // await this.activity.log({
+    //   module: 'bags',
+    //   action: 'transfer',
+    //   eventKey: 'bags.transfer.other_bag',
+    //   actor: dto.createdBy
+    //     ? { userId: dto.createdBy } // ✅ from Flutter uid
+    //     : actor,
+    //   entities: [
+    //     {
+    //       type: 'Bag',
+    //       id: String(dto.sourceBagId),
+    //       label: sourceBefore.bagCode,
+    //     },
+    //     {
+    //       type: 'Bag',
+    //       id: String(dto.targetBagId),
+    //       label: targetBefore.bagCode,
+    //     },
+    //     {
+    //       type: 'Item',
+    //       id: String(sourceBefore.itemId),
+    //       label: sourceBefore.itemName ?? '',
+    //     },
+    //   ],
+    //   changes: {
+    //     before: {
+    //       source: this.bagSnap(sourceBefore),
+    //       target: this.bagSnap(targetBefore),
+    //     },
+    //     after: {
+    //       source: this.bagSnap(sourceAfter),
+    //       target: this.bagSnap(targetAfter),
+    //     },
+    //     delta: {
+    //       qty,
+    //       source: { itemStock: -qty, itemUsed: +qty, transferQty: +qty },
+    //       target: { itemStock: +qty },
+    //     },
+    //   },
+    //   meta: {
+    //     sourceBagId: dto.sourceBagId,
+    //     targetBagId: dto.targetBagId,
+    //     qty,
+    //     maxQty,
+    //   },
+    // });
 
     return {
       status: true,

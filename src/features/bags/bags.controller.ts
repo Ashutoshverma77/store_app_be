@@ -16,10 +16,14 @@ import { UpdateBagDto } from './dto/update-bag.dto';
 import { Bag } from './entities/bag.schema';
 import { TransferBagDto } from './dto/transfer-bag.dto';
 import { AddBagStockDto } from './dto/add-bag-stock.dto';
+import { BagGateway } from './bags.gateway';
 
 @Controller('/api/bags')
 export class BagsController {
-  constructor(private readonly bagsService: BagsService) {}
+  constructor(
+    private readonly bagsService: BagsService,
+    private readonly gateway: BagGateway,
+  ) {}
 
   @Post()
   async create(@Body() createBagDto: CreateBagDto) {
@@ -38,17 +42,22 @@ export class BagsController {
 
   @Put(':id/update')
   async update(@Param('id') id: string, @Body() updateBagDto: UpdateBagDto) {
-    return await this.bagsService.update(id, updateBagDto);
+    var data = await this.bagsService.update(id, updateBagDto);
+    this.gateway.emitAllBags().catch(() => {});
+    return data;
   }
-  
+
   @Put(':id/add-stock')
-  addStock(@Param('id') id: string, @Body() dto: AddBagStockDto) {
-    return this.bagsService.addStock(id, dto);
+  async addStock(@Param('id') id: string, @Body() dto: AddBagStockDto) {
+    var data = await this.bagsService.addStock(id, dto);
+    this.gateway.emitAllBags().catch(() => {});
+    return data;
   }
 
   @Put(':id/transfer-to-bag')
   async transferToBag(@Body() dto: TransferBagDto) {
     const data = await this.bagsService.transferToAnotherBag(dto);
+    this.gateway.emitAllBags().catch(() => {});
     return { status: true, msg: 'Transferred successfully', data };
   }
   @Delete(':id')

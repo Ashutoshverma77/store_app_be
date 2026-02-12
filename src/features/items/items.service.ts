@@ -10,6 +10,12 @@ import {
   ActivityLogsService,
 } from '../activity/activity.service';
 
+type ApiResponse<T> = {
+  status: boolean;
+  msg: string;
+  data: T;
+};
+
 @Injectable()
 export class ItemsService {
   constructor(
@@ -34,8 +40,15 @@ export class ItemsService {
     };
   }
 
-  async create(dto: CreateItemDto, actor?: ActivityActorInput): Promise<Item> {
+  async create(
+    dto: CreateItemDto,
+    actor?: ActivityActorInput,
+  ): Promise<ApiResponse<Item>> {
     const payload: any = { ...dto };
+
+    const itemcount = await this.itemModel.countDocuments();
+
+    payload.code = `Item-${itemcount + 1}`;
 
     if (dto.sizeId) payload.sizeId = new Types.ObjectId(dto.sizeId);
     if (dto.gradeId) payload.gradeId = new Types.ObjectId(dto.gradeId);
@@ -43,27 +56,27 @@ export class ItemsService {
     const item = new this.itemModel(payload);
     const saved = await item.save();
 
-    await this.activity.log({
-      module: 'items',
-      action: 'create',
-      eventKey: 'items.create',
-      actor: dto.createdBy
-        ? { userId: dto.createdBy } // ✅ from Flutter uid
-        : actor,
-      entities: [
-        { type: 'Item', id: saved._id!.toString(), label: saved.name },
-      ],
-      changes: {
-        before: null,
-        after: { item: this.itemSnap(saved) },
-        delta: {
-          openingStock: Number(saved.openingStock) || 0,
-        },
-      },
-      meta: { dto },
-    });
+    // await this.activity.log({
+    //   module: 'items',
+    //   action: 'create',
+    //   eventKey: 'items.create',
+    //   actor: dto.createdBy
+    //     ? { userId: dto.createdBy } // ✅ from Flutter uid
+    //     : actor,
+    //   entities: [
+    //     { type: 'Item', id: saved._id!.toString(), label: saved.name },
+    //   ],
+    //   changes: {
+    //     before: null,
+    //     after: { item: this.itemSnap(saved) },
+    //     delta: {
+    //       openingStock: Number(saved.openingStock) || 0,
+    //     },
+    //   },
+    //   meta: { dto },
+    // });
 
-    return saved;
+    return { status: true, msg: 'Item created', data: saved };
   }
 
   async findAll(): Promise<Item[]> {

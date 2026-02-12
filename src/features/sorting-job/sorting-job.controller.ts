@@ -16,10 +16,15 @@ import { SortingJobsService } from './sorting-job.service';
 import { TransferToBagDto } from './dto/transfer-to-bag.dto';
 import { AddBagToJobDto } from './dto/add-bag-to-job.dto';
 import { TransferToBagTwoDto } from './dto/transfer-to-bag-two.dto';
+import { SortingJobsGateway } from './sorting-job.gateway';
+import { CreateMachineDto } from './dto/create-machine.dto';
 
 @Controller('sorting-jobs')
 export class SortingJobsController {
-  constructor(private readonly service: SortingJobsService) {}
+  constructor(
+    private readonly service: SortingJobsService,
+    private readonly gateway: SortingJobsGateway,
+  ) {}
 
   @Get()
   findAll() {
@@ -32,29 +37,41 @@ export class SortingJobsController {
   }
 
   @Post()
-  create(@Body() dto: CreateSortingJobDto) {
-    return this.service.create(dto);
+  async create(@Body() dto: CreateSortingJobDto) {
+    // console.log(dto);
+    // return;
+    var data = await this.service.create(dto);
+    this.gateway.emitAllJobs().catch(() => {});
+    return data;
   }
 
   @Put(':id/start')
-  start(@Param('id') id: string, @Query('createdBy') createdBy?: string) {
-    return this.service.start(id);
+  async start(@Param('id') id: string, @Query('createdBy') createdBy?: string) {
+    var data = await this.service.start(id);
+    this.gateway.emitAllJobs().catch(() => {});
+    return data;
   }
 
   // transfer for ONE bag at a time
   @Put(':id/transfer-one')
   transferOne(@Param('id') id: string, @Body() dto: TransferSortingJobDto) {
-    return this.service.transferOne(id, dto);
+    var data = this.service.transferOne(id, dto);
+    this.gateway.emitAllJobs().catch(() => {});
+    return data;
   }
 
   @Put(':id/transfer-to-bag')
   transferToBag(@Param('id') id: string, @Body() dto: TransferToBagDto) {
-    return this.service.transferToAnotherBag(id, dto);
+    var data = this.service.transferToAnotherBag(id, dto);
+    this.gateway.emitAllJobs().catch(() => {});
+    return data;
   }
 
   @Put(':id/transfer-to-bag-two')
   transferToBagTwo(@Param('id') id: string, @Body() dto: TransferToBagTwoDto) {
-    return this.service.transferToAnotherBagTwo(id, dto);
+    var data = this.service.transferToAnotherBagTwo(id, dto);
+    this.gateway.emitAllJobs().catch(() => {});
+    return data;
   }
 
   @Get('started/by-item/:itemId')
@@ -68,6 +85,18 @@ export class SortingJobsController {
     @Body() dto: AddBagToJobDto,
     // @Headers('x-user-id') userId?: string,
   ) {
-    return this.service.addBagToJob(jobId, dto, dto.createdBy);
+    var data = this.service.addBagToJob(jobId, dto, dto.createdBy);
+    this.gateway.emitAllJobs().catch(() => {});
+    return data;
+  }
+
+  @Post('machinetojob')
+  addMachineToJob(
+    @Body() dto: CreateMachineDto,
+    // @Headers('x-user-id') userId?: string,
+  ) {
+    var data = this.service.machineCreate(dto);
+    this.gateway.emitAllJobsMachine().catch(() => {});
+    return data;
   }
 }

@@ -4,13 +4,13 @@ import { HydratedDocument, Types } from 'mongoose';
 
 class IssueLine {
   @Prop()
-  itemId: string;
+  itemId!: string;
 
   @Prop({ required: true, trim: true })
-  itemName: string;
+  itemName!: string;
 
   @Prop({ required: true, min: 1 })
-  requestedQty: number;
+  requestedQty!: number;
 
   @Prop({ default: 0, min: 0 })
   approvedQty: number;

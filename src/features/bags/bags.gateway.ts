@@ -12,7 +12,7 @@ import { BagsService } from './bags.service';
 })
 export class BagGateway {
   @WebSocketServer()
-  server: Server;
+  server?: Server ;
 
   constructor(private readonly bagsService: BagsService) {}
 
@@ -24,6 +24,6 @@ export class BagGateway {
 
   async emitAllBags() {
     const bags = await this.bagsService.findAll();
-    this.server.emit('bag:findAllBag', bags); // ✅ broadcast after changes
+    this.server!.emit('bag:findAllBag', bags); // ✅ broadcast after changes
   }
 }

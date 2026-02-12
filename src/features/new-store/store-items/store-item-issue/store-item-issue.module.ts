@@ -34,8 +34,8 @@ import { Bag, BagSchema } from 'src/features/bags/entities/bag.schema';
     MongooseModule.forFeature(
       [
         { name: StoreNewItem.name, schema: StoreNewItemSchema },
-        { name: StoreItemName.name, schema: StoreItemNameSchema },
         { name: StoreCategory.name, schema: StoreCategorySchema },
+        { name: StoreItemName.name, schema: StoreItemNameSchema },
         { name: Rack.name, schema: RackSchema },
         { name: ItemIssue.name, schema: ItemIssueSchema },
         { name: StockTrack.name, schema: StockTrackSchema },

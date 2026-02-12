@@ -35,6 +35,10 @@ export class CreateSortingJobDto {
 
   @IsString()
   @IsOptional()
+  machineId?: string;
+
+  @IsString()
+  @IsOptional()
   machineName?: string;
 
   @IsArray()

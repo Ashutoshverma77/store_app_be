@@ -32,6 +32,9 @@ export const SortingJobInputBagSchema =
 @Schema({ timestamps: true })
 export class SortingJob {
   @Prop({ type: String })
+  machineId?: string;
+
+  @Prop({ type: String })
   machineName?: string;
 
   @Prop({ type: Types.ObjectId, required: true })

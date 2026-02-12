@@ -8,13 +8,13 @@ import {
 } from 'class-validator';
 
 export class CreateItemDto {
-  @IsNotEmpty()
-  @IsString()
-  code: string;
+  // @IsNotEmpty()
+  // @IsString()
+  // code?: string;
 
   @IsNotEmpty()
   @IsString()
-  name: string;
+  name?: string;
 
   @IsOptional()
   @IsString()
@@ -40,6 +40,10 @@ export class CreateItemDto {
   @IsOptional()
   @IsString()
   unit?: string;
+
+  @IsOptional()
+  @IsString()
+  unitName?: string;
 
   @IsOptional()
   createdBy?: string;

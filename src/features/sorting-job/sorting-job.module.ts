@@ -9,6 +9,9 @@ import { Bag, BagSchema } from '../bags/entities/bag.schema';
 import { Item, ItemSchema } from '../items/entities/item.schema';
 import { SortingJobsGateway } from './sorting-job.gateway';
 import { ActivityModule } from '../activity/activity.module';
+import { Machine, MachineSchema } from './entities/machine.schema';
+import { StoreCategory, StoreCategorySchema } from '../new-store/store-items/store-category/entities/store-category.schema';
+import { StoreNewItem, StoreNewItemSchema } from '../new-store/store-items/store-item/entities/store-item.schema';
 
 @Module({
   imports: [
@@ -17,6 +20,9 @@ import { ActivityModule } from '../activity/activity.module';
         { name: SortingJob.name, schema: SortingJobSchema },
         { name: Bag.name, schema: BagSchema },
         { name: Item.name, schema: ItemSchema },
+        { name: Machine.name, schema: MachineSchema },
+        { name: StoreNewItem.name, schema: StoreNewItemSchema },
+        { name: StoreCategory.name, schema: StoreCategorySchema },
       ],
       'store',
     ),

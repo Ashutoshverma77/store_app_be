@@ -6,15 +6,8 @@ export class StoreNewItem extends Document {
   @Prop({ default: '' })
   itemCode?: string;
 
-  // Field 1: ItemName
-  // @Prop({ default: '' })
-  // itemNameId: string;
-
   @Prop({ default: '' })
   itemName?: string;
-
-  // @Prop({ default: '' })
-  // itemNameCode: string;
 
   // Field 2: Rack
   @Prop({ default: [] })

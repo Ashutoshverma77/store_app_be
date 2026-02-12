@@ -7,10 +7,10 @@ export type ItemDocument = Item & Document;
 @Schema({ timestamps: true })
 export class Item {
   @Prop({ required: true, trim: true, unique: true })
-  code: string; // item code
+  code?: string; // item code
 
   @Prop({ required: true, trim: true })
-  name: string;
+  name?: string;
 
   // Size
   @Prop({ type: Types.ObjectId, ref: 'Size', required: false })
@@ -27,10 +27,13 @@ export class Item {
   grade?: string; // denormalized name
 
   @Prop({ type: Number, default: 0, min: 0 })
-  openingStock: number;
+  openingStock?: number;
 
   @Prop({ type: String, required: false })
   unit?: string; // KG, NO, BAG, etc.
+
+  @Prop({ type: String, required: false })
+  unitName?: string; // KG, NO, BAG, etc.
 }
 
 export const ItemSchema = SchemaFactory.createForClass(Item);

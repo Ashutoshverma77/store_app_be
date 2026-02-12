@@ -18,6 +18,10 @@ import {
 } from '../activity/activity.service';
 import { AddBagToJobDto } from './dto/add-bag-to-job.dto';
 import { TransferToBagTwoDto } from './dto/transfer-to-bag-two.dto';
+import { Machine, MachineDocument } from './entities/machine.schema';
+import { CreateMachineDto } from './dto/create-machine.dto';
+import { StoreCategory } from '../new-store/store-items/store-category/entities/store-category.schema';
+import { StoreNewItem } from '../new-store/store-items/store-item/entities/store-item.schema';
 
 @Injectable()
 export class SortingJobsService {
@@ -26,7 +30,14 @@ export class SortingJobsService {
     private jobModel: Model<SortingJobDocument>,
     @InjectModel(Bag.name, 'store') private bagModel: Model<BagDocument>,
     @InjectModel(Item.name, 'store') private itemModel: Model<ItemDocument>,
+    @InjectModel(Machine.name, 'store')
+    private readonly machineModel: Model<MachineDocument>,
 
+    @InjectModel('StoreNewItem', 'store')
+    private readonly itemNewModel: Model<StoreNewItem>,
+
+    @InjectModel('StoreCategory', 'store')
+    private readonly catModel: Model<StoreCategory>,
     private readonly activity: ActivityLogsService,
   ) {}
 
@@ -94,6 +105,10 @@ export class SortingJobsService {
     return this.jobModel.find().sort({ createdAt: -1 }).lean();
   }
 
+  async findAllMachine() {
+    return this.machineModel.find({ isActive: true }).lean();
+  }
+
   async findById(id: string) {
     const job = await this.jobModel.findById(id).lean();
     if (!job) throw new NotFoundException('Job not found');
@@ -103,6 +118,8 @@ export class SortingJobsService {
   // ----------------- CREATE -----------------
   // CREATE JOB: subtract from bag stock and item opening stock
   async create(dto: CreateSortingJobDto, actor?: ActivityActorInput) {
+    // console.log(dto);
+
     const itemId = new Types.ObjectId(dto.itemId);
     const itemBefore = await this.itemModel.findById(itemId);
     if (!itemBefore) throw new NotFoundException('Item not found');
@@ -258,7 +275,7 @@ export class SortingJobsService {
       },
     });
 
-    return created;
+    return { status: true, msg: 'Bag created', data: created };
   }
 
   // ----------------- START -----------------
@@ -1132,5 +1149,55 @@ export class SortingJobsService {
       } catch (_) {}
       throw e;
     }
+  }
+  private twoLettersFromGroup(group: number): string {
+    // AA..ZZ only
+    const max = 26 * 26 - 1;
+    if (group < 0 || group > max) {
+      throw new Error('Code series exhausted (beyond ZZ).');
+    }
+    const first = Math.floor(group / 26);
+    const second = group % 26;
+    return String.fromCharCode(65 + first) + String.fromCharCode(65 + second);
+  }
+  private format(prefix: string, seq: number): string {
+    const group = Math.floor((seq - 1) / 999); // 0 => AA, 1 => AB ...
+    const num = ((seq - 1) % 999) + 1; // 1..999
+    const letters = this.twoLettersFromGroup(group);
+    const num3 = String(num).padStart(3, '0');
+    return `${prefix}-${letters}${num3}`; // RM-AA001
+  }
+
+  async machineCreate(dto: CreateMachineDto) {
+    // const categoryId = this.toObjectId(dto.categoryId, 'categoryId');
+    // const itemId = dto.itemId ? this.toObjectId(dto.itemId, 'itemId') : null;
+
+    // If you want to validate existence:
+    const cat = await this.catModel.exists({ _id: dto.categoryId });
+    if (!cat) throw new BadRequestException('Category not found');
+    // if (itemId) {
+    const it = await this.itemNewModel.exists({ _id: dto.itemId });
+    if (!it) throw new BadRequestException('Item not found');
+    // }
+    const machine = await this.machineModel.exists({
+      categoryId: dto.categoryId,
+      itemId: dto.itemId,
+    });
+    if (machine) throw new BadRequestException('Item exists');
+    // prevent duplicate code
+    const exists = await this.machineModel.find();
+    // if (exists) throw new BadRequestException('machineCode already exists');
+    const categoryCode = this.format('MSJ', exists.length + 1);
+    const created = await this.machineModel.create({
+      machineCode: categoryCode,
+      machineName: dto.machineName.trim(),
+      categoryId: dto.categoryId,
+      itemId: dto.itemId,
+      remark: dto.remark ?? '',
+      isActive: dto.isActive ?? true,
+      createdBy: dto.createdBy ?? '',
+    });
+
+    return { ok: true, msg: 'Machine created', data: created };
   }
 }

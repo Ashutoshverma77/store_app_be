@@ -14,14 +14,26 @@ import { ItemsService } from './items.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { Item } from './entities/item.schema';
+import { ItemsGateway } from './items.gateway';
+
+type ApiResponse<T> = {
+  status: boolean;
+  msg: string;
+  data: T;
+};
 
 @Controller('/api/items')
 export class ItemsController {
-  constructor(private readonly itemsService: ItemsService) {}
+  constructor(
+    private readonly itemsService: ItemsService,
+    private readonly gateway: ItemsGateway,
+  ) {}
 
   @Post()
-  async create(@Body() dto: CreateItemDto): Promise<Item> {
-    return await this.itemsService.create(dto);
+  async create(@Body() dto: CreateItemDto): Promise<ApiResponse<Item>> {
+    var data = await this.itemsService.create(dto);
+    this.gateway.broadcastItems().catch(() => {});
+    return data;
   }
 
   @Get()

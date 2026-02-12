@@ -51,4 +51,15 @@ export class IssueGateway {
     const list = await this.s.findAllIssuesPaged(body);
     this.server.emit('store:issues:list', list); // broadcast to all clients
   }
+
+  @SubscribeMessage('store:issueByIdItemWithCategory')
+  async sourcesIssueByIdItemWithCategory(
+    @ConnectedSocket() client: Socket,
+    // @MessageBody() body: any,
+  ) {
+    // const itemId = String(body?.issueId || '').trim();
+    const data = await this.s.getMachineCategoriesWithIssuedItems();
+    // console.log(data.categories);
+    client.emit('store:issueByIdItemWithCategory', data.categories);
+  }
 }

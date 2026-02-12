@@ -23,6 +23,24 @@ import { Bag, BagDocument } from 'src/features/bags/entities/bag.schema';
 // ✅ Adjust these imports/paths to your project
 // If you have class-based schema:
 /// import { StockTrack } from '../stock-track/entities/stock-stock-track.schema';
+type IssuedItemUI = {
+  id: string;
+  itemCode: string;
+  itemName: string;
+  categoryId: string;
+  netIssued: number;
+  issueNos: string[]; // ✅ issNo list here
+};
+type CategoryWithIssuedItems = {
+  categoryId: string;
+  code: string;
+  name: string;
+  parentId: string[];
+  isMachine: boolean;
+  isbag: boolean;
+  isNormalItem: boolean;
+  items: IssuedItemUI[]; // ✅ keep items:list only
+};
 
 type StockTrackType =
   | 'CREATE'
@@ -1154,6 +1172,18 @@ export class IssueService {
     const issue = await this.issueModel.findById(this.oid(issueId));
     if (!issue) throw new BadRequestException('Issue not found');
 
+    const storeItem = await this.itemModel.findById(this.oid(itemId));
+    if (!storeItem) throw new BadRequestException('Store item not found');
+
+    const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
+    if (!storeRack) throw new BadRequestException('Store rack not found');
+
+    var checkrack = await this.itemRackQtyModel.findOne({
+      rackId: storeRack._id,
+      itemId: storeItem._id,
+    });
+    if (!checkrack) throw new BadRequestException('Store rack not found');
+
     const approveUser = await this.userService.findById(returnedBy);
     const createUser = await this.userService.findById(issue.createdBy);
 
@@ -1220,7 +1250,25 @@ export class IssueService {
       );
     }
 
-    // line.issuedQty = issuedQty;
+    if (storeItem.maxCapacity! > 0) {
+      const counter = await this.bagModel
+        .find({ parentItemId: storeItem._id!.toString(), itemId: '' })
+        .sort({ createdAt: -1 });
+
+      if (total > counter.length) {
+        throw new BadRequestException(
+          `Invalid return: total ${total} > counter.length ${counter.length}`,
+        );
+      }
+
+      for (let n = 0; n < total; n++) {
+        await this.bagModel.findByIdAndUpdate(counter[n]._id, {
+          approvedStatus: 'rejected',
+        });
+      }
+    }
+
+    line.issuedQty = issuedQty;
     line.returnQty = nextReturnQty;
     line.scrapQty = nextScrapQty;
 
@@ -1260,17 +1308,6 @@ export class IssueService {
     await issue.save();
 
     // ✅ 3) Now update STOCK
-    const storeItem = await this.itemModel.findById(this.oid(itemId));
-    if (!storeItem) throw new BadRequestException('Store item not found');
-
-    const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
-    if (!storeRack) throw new BadRequestException('Store rack not found');
-
-    var checkrack = await this.itemRackQtyModel.findOne({
-      rackId: storeRack._id,
-      itemId: storeItem._id,
-    });
-    if (!checkrack) throw new BadRequestException('Store rack not found');
 
     const prevIssueStock = Number((storeItem as any).stockIssueQuantity || 0);
     (storeItem as any).stockIssueQuantity = Math.max(0, prevIssueStock - total);
@@ -1797,5 +1834,163 @@ export class IssueService {
       page,
       limit: 10,
     };
+  }
+
+  async getMachineCategoriesWithIssuedItems(): Promise<{
+    ok: boolean;
+    msg: string;
+    categories: CategoryWithIssuedItems[];
+  }> {
+    // 1) Categories: parentId not empty + isMachine true
+    // parentId is array => $expr + $size (safe)
+    const categories = await this.catModel
+      .find({
+        isMachine: true,
+        $expr: { $gt: [{ $size: { $ifNull: ['$parentId', []] } }, 0] },
+      })
+      .lean();
+
+    if (!categories.length) {
+      return { ok: true, msg: 'categories not present', categories: [] };
+    }
+
+    const categoryIds = categories.map((c: any) => c._id.toString());
+
+    // 2) Items by categoryId (categoryId is stored as string in StoreNewItem)
+    const items = await this.itemModel
+      .find(
+        { categoryId: { $in: categoryIds } },
+        { itemCode: 1, itemName: 1, categoryId: 1 }, // _id is included by default
+      )
+      .lean();
+
+    if (!items.length) {
+      return { ok: true, msg: 'items not present', categories: [] };
+    }
+
+    // 3) Build ObjectId list for matching ItemIssue.lines.itemId (which is actually stored as ObjectId in your data)
+    const itemObjectIds: Types.ObjectId[] = items
+      .map((i: any) => i._id?.toString?.() ?? '')
+      .filter((id: string) => Types.ObjectId.isValid(id))
+      .map((id: string) => new Types.ObjectId(id));
+
+    if (!itemObjectIds.length) {
+      return { ok: true, msg: 'no valid item ids', categories: [] };
+    }
+
+    // 4) Aggregate netIssued per item + collect issueNos
+    // netIssued = issuedQty - (returnQty + scrapQty)
+    const agg: Array<{
+      itemId: string;
+      netIssued: number;
+      issueNos: string[];
+    }> = await this.issueModel.aggregate([
+      { $unwind: '$lines' },
+
+      // ✅ match itemId with ObjectId list
+      { $match: { 'lines.itemId': { $in: itemObjectIds } } },
+
+      {
+        $project: {
+          issNo: '$issNo',
+          itemId: '$lines.itemId',
+          net: {
+            $subtract: [
+              { $ifNull: ['$lines.issuedQty', 0] },
+              {
+                $add: [
+                  { $ifNull: ['$lines.returnQty', 0] },
+                  { $ifNull: ['$lines.scrapQty', 0] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+
+      // ✅ keep only positive contribution lines (optional but cleaner)
+      { $match: { net: { $gt: 0 } } },
+
+      {
+        $group: {
+          _id: '$itemId',
+          netIssued: { $sum: '$net' },
+          issueNos: { $addToSet: '$issNo' }, // ✅ collect issNo list
+        },
+      },
+
+      { $match: { netIssued: { $gt: 0 } } },
+
+      // ✅ project itemId as string for mapping
+      {
+        $project: {
+          _id: 0,
+          itemId: { $toString: '$_id' },
+          netIssued: 1,
+          issueNos: 1,
+        },
+      },
+    ]);
+
+    if (!agg.length) {
+      return { ok: true, msg: 'item issue not present', categories: [] };
+    }
+
+    // ✅ IMPORTANT FIX:
+    // your previous code used r._id but you projected itemId, so map was always empty
+    const metaByItemId = new Map<
+      string,
+      { netIssued: number; issueNos: string[] }
+    >(
+      agg.map((r) => [
+        r.itemId,
+        { netIssued: r.netIssued, issueNos: r.issueNos ?? [] },
+      ]),
+    );
+
+    // Keep only items that have netIssued > 0 and enrich with issueNos
+    const issuedItems: IssuedItemUI[] = items
+      .filter((it: any) => metaByItemId.has(it._id.toString()))
+      .map((it: any) => {
+        const meta = metaByItemId.get(it._id.toString())!;
+        return {
+          id: it._id.toString(),
+          itemCode: it.itemCode ?? '',
+          itemName: it.itemName ?? '',
+          categoryId: it.categoryId ?? '',
+          netIssued: meta.netIssued,
+          issueNos: meta.issueNos, // ✅ added here (issNo list)
+        };
+      });
+
+    // 5) Group items by categoryId (string)
+    const itemsByCategory = new Map<string, IssuedItemUI[]>();
+    for (const it of issuedItems) {
+      const list = itemsByCategory.get(it.categoryId) ?? [];
+      list.push(it);
+      itemsByCategory.set(it.categoryId, list);
+    }
+
+    // 6) Return only categories that have at least 1 issued item
+    const result: CategoryWithIssuedItems[] = categories
+      .map((c: any) => {
+        const cid = c._id.toString();
+        const list = itemsByCategory.get(cid) ?? [];
+        if (!list.length) return null;
+
+        return {
+          categoryId: cid,
+          code: c.code,
+          name: c.name,
+          parentId: Array.isArray(c.parentId) ? c.parentId : [],
+          isMachine: !!c.isMachine,
+          isbag: !!c.isbag,
+          isNormalItem: !!c.isNormalItem,
+          items: list, // ✅ items list contains issueNos now
+        };
+      })
+      .filter(Boolean) as CategoryWithIssuedItems[];
+
+    return { ok: true, msg: 'item issue present', categories: result };
   }
 }
