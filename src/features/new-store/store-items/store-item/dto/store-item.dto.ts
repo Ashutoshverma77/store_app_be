@@ -2,6 +2,7 @@ import {
   IsArray,
   IsInt,
   IsMongoId,
+  IsNumber,
   IsOptional,
   IsString,
   Min,
@@ -16,7 +17,7 @@ export class CreateItemDto {
   @IsOptional() @IsArray() subCategoryIds?: [string];
 
   @IsOptional() @IsString() unit?: string;
-  @IsOptional() @IsString() maxCapacity?: string;
+  @IsOptional() @IsNumber() maxCapacity?: number;
   @IsOptional() @IsString() description?: string;
 
   @IsOptional() @IsString() imageUrl?: string;

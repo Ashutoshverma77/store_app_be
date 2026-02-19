@@ -19,6 +19,10 @@ import {
 } from '../../locations/rack/entities/item-rack-qty.schema';
 import { UserService } from 'src/features/user/user.service';
 import { Bag, BagDocument } from 'src/features/bags/entities/bag.schema';
+import {
+  Machine,
+  MachineDocument,
+} from 'src/features/sorting-job/entities/machine.schema';
 
 // ✅ Adjust these imports/paths to your project
 // If you have class-based schema:
@@ -74,6 +78,9 @@ export class IssueService {
 
     @InjectModel(Bag.name, 'store')
     private readonly bagModel: Model<BagDocument>,
+
+    @InjectModel(Machine.name, 'store')
+    private readonly machineModel: Model<MachineDocument>,
 
     private readonly userService: UserService,
   ) {}
@@ -874,7 +881,11 @@ export class IssueService {
 
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
-
+    const storeCategory = await this.catModel.findById(
+      this.oid(storeItem.categoryId),
+    );
+    if (!storeCategory)
+      throw new BadRequestException('Store Category not found');
     const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
     if (!storeRack) throw new BadRequestException('Store rack not found');
 
@@ -1005,6 +1016,14 @@ export class IssueService {
 
         await this.bagModel.create(payload);
       }
+    }
+
+    if (storeCategory.isMachine) {
+      // var data =
+        await this.disableAndAbleMachinesIfCategoryHasOutstandingIssues(
+          storeItem.categoryId!,
+        );
+      // console.log(data);
     }
     // ✅ Track ISSUE (recommended signed negative)
     await this.track({
@@ -1174,6 +1193,12 @@ export class IssueService {
 
     const storeItem = await this.itemModel.findById(this.oid(itemId));
     if (!storeItem) throw new BadRequestException('Store item not found');
+
+    const storeCategory = await this.catModel.findById(
+      this.oid(storeItem.categoryId),
+    );
+    if (!storeCategory)
+      throw new BadRequestException('Store Category not found');
 
     const storeRack = await this.rackModel.findById(this.oid(dto.rackId));
     if (!storeRack) throw new BadRequestException('Store rack not found');
@@ -1348,6 +1373,14 @@ export class IssueService {
           Number((scrapItem as any).stockAvailableQuantity || 0) + scrapQty;
         await scrapItem.save();
       }
+    }
+
+    if (storeCategory.isMachine) {
+      // var data =
+        await this.disableAndAbleMachinesIfCategoryHasOutstandingIssues(
+          storeItem.categoryId!,
+        );
+      // console.log(data);
     }
 
     // ✅ Track RETURN / SCRAP
@@ -1843,7 +1876,7 @@ export class IssueService {
   }> {
     // 1) Categories: parentId not empty + isMachine true
     // parentId is array => $expr + $size (safe)
-    const categories = await this.catModel
+    let categories = await this.catModel
       .find({
         isMachine: true,
         $expr: { $gt: [{ $size: { $ifNull: ['$parentId', []] } }, 0] },
@@ -1852,6 +1885,31 @@ export class IssueService {
 
     if (!categories.length) {
       return { ok: true, msg: 'categories not present', categories: [] };
+    }
+    const allCategoryIds = categories.map((c: any) => c._id.toString());
+
+    // ✅ NEW STEP: Exclude categories that already exist in Machine collection
+    const machineCats = await this.machineModel
+      .find(
+        { categoryId: { $in: allCategoryIds } }, // Machine.categoryId is string
+        { categoryId: 1, _id: 0 },
+      )
+      .lean();
+
+    const machineCategorySet = new Set<string>(
+      machineCats.map((m: any) => (m.categoryId ?? '').toString().trim()),
+    );
+
+    categories = categories.filter(
+      (c: any) => !machineCategorySet.has(c._id.toString()),
+    );
+
+    if (!categories.length) {
+      return {
+        ok: true,
+        msg: 'all categories already exist in machine data',
+        categories: [],
+      };
     }
 
     const categoryIds = categories.map((c: any) => c._id.toString());
@@ -1992,5 +2050,97 @@ export class IssueService {
       .filter(Boolean) as CategoryWithIssuedItems[];
 
     return { ok: true, msg: 'item issue present', categories: result };
+  }
+
+  async disableAndAbleMachinesIfCategoryHasOutstandingIssues(
+    categoryId: string,
+  ) {
+    const cid = (categoryId ?? '').trim();
+    if (!Types.ObjectId.isValid(cid))
+      throw new BadRequestException('Invalid categoryId');
+
+    // 1) items in this category (categoryId is stored as string in StoreNewItem)
+    const items = await this.itemModel
+      .find({ categoryId: cid }, { _id: 1 })
+      .lean();
+
+    if (!items.length) {
+      // no items => no outstanding issues => do nothing
+      return { ok: true, categoryId: cid, hasOutstanding: false, updated: 0 };
+    }
+
+    const itemIds = items.map((x: any) => x._id.toString());
+
+    // 2) compute netIssued across ALL issues for these items
+    //    net = issuedQty - (returnQty + scrapQty)
+    // ✅ supports lines.itemId stored as ObjectId or string (we convert to string)
+    const agg = await this.issueModel.aggregate([
+      { $unwind: '$lines' },
+      { $addFields: { itemIdStr: { $toString: '$lines.itemId' } } },
+      { $match: { itemIdStr: { $in: itemIds } } },
+      {
+        $group: {
+          _id: null,
+          totalIssued: { $sum: { $ifNull: ['$lines.issuedQty', 0] } },
+          totalReturned: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$lines.returnQty', 0] },
+                { $ifNull: ['$lines.scrapQty', 0] },
+              ],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalIssued: 1,
+          totalReturned: 1,
+          netIssued: { $subtract: ['$totalIssued', '$totalReturned'] },
+        },
+      },
+    ]);
+
+    // console.log(agg);
+
+    const totalIssued = agg?.[0]?.totalIssued ?? 0;
+    const totalReturned = agg?.[0]?.totalReturned ?? 0;
+    const netIssued = agg?.[0]?.netIssued ?? 0;
+
+    const hasOutstanding = netIssued > 0;
+
+    if (hasOutstanding) {
+      // ✅ condition not met => do nothing
+      const res = await this.machineModel.updateMany(
+        { categoryId: cid, isActive: false },
+        { $set: { isActive: true } },
+      );
+      return {
+        ok: true,
+        categoryId: cid,
+        hasOutstanding: false,
+        totalIssued,
+        totalReturned,
+        netIssued,
+        updated: 0,
+      };
+    } else {
+      // 3) condition met => only TRUE -> FALSE
+      const res = await this.machineModel.updateMany(
+        { categoryId: cid, isActive: true },
+        { $set: { isActive: false } },
+      );
+
+      return {
+        ok: true,
+        categoryId: cid,
+        hasOutstanding: true,
+        totalIssued,
+        totalReturned,
+        netIssued,
+        updated: res.modifiedCount ?? 0,
+      };
+    }
   }
 }

@@ -118,9 +118,16 @@ export class SortingJobsService {
   // ----------------- CREATE -----------------
   // CREATE JOB: subtract from bag stock and item opening stock
   async create(dto: CreateSortingJobDto, actor?: ActivityActorInput) {
-    // console.log(dto);
+    console.log(dto);
 
     const itemId = new Types.ObjectId(dto.itemId);
+    const machineId = new Types.ObjectId(dto.machineId);
+
+    const machineBefore = await this.machineModel.findById(machineId);
+    if (!machineBefore) throw new NotFoundException('machine not found');
+    if (!machineBefore.isActive)
+      throw new NotFoundException('machine not active');
+
     const itemBefore = await this.itemModel.findById(itemId);
     if (!itemBefore) throw new NotFoundException('Item not found');
 
@@ -212,6 +219,7 @@ export class SortingJobsService {
 
     // Create job
     const created = await this.jobModel.create({
+      machineId: dto.machineId,
       machineName: dto.machineName,
       itemId,
       itemName: dto.itemName,
@@ -275,7 +283,7 @@ export class SortingJobsService {
       },
     });
 
-    return { status: true, msg: 'Bag created', data: created };
+    return { status: true, msg: 'Sorting job created', data: created };
   }
 
   // ----------------- START -----------------
@@ -452,7 +460,7 @@ export class SortingJobsService {
       },
     });
 
-    return job;
+    return { status: true, msg: 'Sorting job Qty Transfered', data: job };
   }
 
   // ----------------- TRANSFER TO ANOTHER BAG -----------------
@@ -1198,6 +1206,6 @@ export class SortingJobsService {
       createdBy: dto.createdBy ?? '',
     });
 
-    return { ok: true, msg: 'Machine created', data: created };
+    return { status: true, msg: 'Machine created', data: created };
   }
 }
