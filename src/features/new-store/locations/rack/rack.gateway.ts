@@ -11,7 +11,7 @@ import { RacksService } from './rack.service';
 @WebSocketGateway({ cors: { origin: '*', credentials: true } })
 export class RackGateway {
   @WebSocketServer() server: any;
-  constructor(private readonly racks: RacksService) { }
+  constructor(private readonly racks: RacksService) {}
 
   async broadcastAllRackList(body: any) {
     const list = await this.racks.findAllPaged({
@@ -174,6 +174,16 @@ export class RackGateway {
     const itemId = String(body?.itemId ?? '');
     const res = await this.racks.findRackStockByItem(id, itemId);
     client.emit('store:findRackStockByItem', res);
+  }
+
+  @SubscribeMessage('store:findAllRackStockByItem')
+  async findAllRackStockByItem(
+    @MessageBody() body: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const itemId = String(body?.itemId ?? '');
+    const res = await this.racks.findAllRackStockByItem(itemId);
+    client.emit('store:findAllRackStockByItem', res);
   }
 
   @SubscribeMessage('store:findNotOccupiedRackPaged')

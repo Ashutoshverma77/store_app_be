@@ -51,7 +51,7 @@ export class RacksService {
 
     private readonly counterService: CounterService,
     private readonly rooms: RoomsService,
-  ) { }
+  ) {}
 
   private oid(id: string) {
     return new Types.ObjectId(id);
@@ -561,6 +561,58 @@ export class RacksService {
     return rackWithStocks;
   }
 
+  async findAllRackStockByItem(itemId: string) {
+    const item: any = await this.itemModel.findById(itemId).lean();
+
+    if (!item) {
+      throw new NotFoundException('Item not found');
+    }
+
+    // Since rack.itemId is an array of strings,
+    // this matches racks where itemId exists inside that array.
+    const racks: any[] = await this.model.find({ itemId }).lean();
+
+    if (!racks.length) {
+      return [];
+    }
+
+    // IMPORTANT:
+    // This assumes ItemRackQtyModel stores rackId and itemId as strings.
+    // If they are ObjectId, change these accordingly.
+    const rackIds = racks.map((rack) => String(rack._id));
+
+    const stockRows: any[] = await this.ItemRackQtyModel.find({
+      itemId: String(item._id),
+      rackId: { $in: rackIds },
+    }).lean();
+
+    const stockMap = new Map(
+      stockRows.map((stock) => [String(stock.rackId), stock]),
+    );
+
+    const allRacksStock = racks.map((rack) => {
+      const stock = stockMap.get(String(rack._id));
+
+      return {
+        _id: rack._id,
+        code: rack.code ?? '',
+        remark: rack.remark ?? '',
+        roomId: rack.roomId ?? '',
+        itemId: String(item._id),
+        isScrap: rack.isScrap ?? false,
+        roomName: rack.roomName ?? '',
+        createdBy: rack.createdBy ?? '',
+        itemCode: item.itemCode?.toString() ?? '',
+        itemName: item.itemName?.toString() ?? '',
+        totalStockQuantity: stock?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: stock?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: stock?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: stock?.stockscrapQuantity ?? 0,
+      };
+    });
+
+    return allRacksStock;
+  }
   /* -------------------- REST WRITES -------------------- */
 
   async create(dto: CreateRackDto) {
@@ -573,7 +625,7 @@ export class RacksService {
       const room = await this.rooms.findOne(dto.roomId);
       const rack = await this.model.find({ roomId: room._id, isActive: false });
       const code = rack[0].code;
-      const idx = code.indexOf("-");
+      const idx = code.indexOf('-');
       const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
       const formet = this.counterService.format(prefix, rack.length + 1);
       // const { code } = await this.counterService.nextCode('rack', 'RK');

@@ -196,7 +196,7 @@ export class StoreNewItemService {
   }
 
   async uploadImageBase64(
-    identity: 'item' | 'user',
+    identity: 'item' | 'user' | 'receive',
     id: string,
     base64Data: string,
     prefix: string,
@@ -212,6 +212,9 @@ export class StoreNewItemService {
     } else if (identity === 'user') {
       entity = await this.userService.findById(id);
       if (!entity) throw new NotFoundException('User not found');
+    } else if (identity === 'receive') {
+      entity = await this.receiveModel.findById(id);
+      if (!entity) throw new NotFoundException('receive not found');
     } else {
       throw new BadRequestException('Invalid identity');
     }
@@ -236,6 +239,13 @@ export class StoreNewItemService {
       if (!scrapChange) throw new NotFoundException('StoreItem not found');
       scrapChange.imageUrl = imageUrl;
       await scrapChange.save();
+    }
+
+    if (identity === 'receive') {
+      var receiveData = await this.receiveModel.findById(id);
+      if (!receiveData) throw new NotFoundException('StoreItem not found');
+      receiveData.imageUrl = imageUrl;
+      await receiveData.save();
     }
 
     // Return a consistent shape
@@ -724,7 +734,7 @@ export class StoreNewItemService {
       const now = new Date();
       const updatedDate = new Date(now.getTime() + 330 * 60 * 1000);
       // 2) create receipt
-      const receipt = await this.receiveModel.create(
+      var receipt = await this.receiveModel.create(
         [
           {
             receivedBy,
@@ -768,7 +778,11 @@ export class StoreNewItemService {
       });
       // });
 
-      return true;
+      return {
+        status: true,
+        msg: 'Received successfully',
+        id: String(receivingDoc?._id ?? ''),
+      };
     } finally {
       // await session.endSession();
     }
@@ -876,6 +890,7 @@ export class StoreNewItemService {
         qty: rec.lines![0].qty,
         remark: rec?.remark,
         createdAt: rec.createdAt,
+        imageUrl: rec.imageUrl,
       });
     }
 

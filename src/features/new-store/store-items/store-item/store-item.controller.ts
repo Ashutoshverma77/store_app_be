@@ -97,11 +97,11 @@ export class StoreNewItemController {
   @Post('receive')
   async receive(@Body() dto: any) {
     // dto: { itemId, qty, receivedBy, remark? }
-    await this.s.receiveItem(dto);
+    var data = await this.s.receiveItem(dto);
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});
     this.gateway.broadcastAllReceiveList().catch(() => {});
-    return { status: true, msg: 'Received successfully' };
+    return data;
   }
 
   @Delete(':id')
@@ -117,6 +117,21 @@ export class StoreNewItemController {
       id,
       dto.base64,
       'store-items',
+    );
+    // this.gateway.broadcastStoreItems().catch(() => {});
+    return { success: true, imageUrl, entity };
+  }
+
+  @Post(':id/receive/image/base64')
+  async uploadImageRevice(
+    @Param('id') id: string,
+    @Body() dto: UploadBase64Dto,
+  ) {
+    const { imageUrl, entity } = await this.s.uploadImageBase64(
+      'receive',
+      id,
+      dto.base64,
+      'store-receive',
     );
     // this.gateway.broadcastStoreItems().catch(() => {});
     return { success: true, imageUrl, entity };

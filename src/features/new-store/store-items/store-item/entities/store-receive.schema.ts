@@ -23,6 +23,9 @@ export class StoreReceive {
   @Prop({ type: String, default: '' })
   remark?: string;
 
+  @Prop({ default: '' })
+  imageUrl?: string;
+
   @Prop({ type: [StoreReceiveLineSchema], default: [] })
   lines?: StoreReceiveLine[];
 
